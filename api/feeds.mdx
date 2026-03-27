@@ -1,0 +1,390 @@
+---
+title: "Feeds"
+description: "Retrieve timeline feeds and manage custom curated feeds."
+---
+
+Mention provides two categories of feed endpoints: **system feeds** (home, explore, user profile) served from `/feed`, and **custom feeds** created and managed by users served from `/feeds`.
+
+## System feeds
+
+All system feed routes are mounted under `/feed`. Most support optional authentication — authenticated requests include viewer-specific fields (`isLiked`, `isReposted`, `isSaved`).
+
+### Feed response format
+
+```json
+{
+  "items": [...],
+  "hasMore": true,
+  "nextCursor": "64a1b2c3d4e5f6a7b8c9d0e1"
+}
+```
+
+### Rate limits
+
+Feed endpoints enforce stricter rate limits than other routes:
+
+- **10 requests per second** per IP
+- **100 requests per minute** for authenticated users
+- **50 requests per minute** for unauthenticated users
+
+---
+
+### MTN feed (unified)
+
+The MTN Protocol provides a descriptor-based, unified feed API.
+
+```
+GET /feed/mtn
+```
+
+<ParamField query="type" type="string">
+  Feed type descriptor: `for_you`, `following`, `explore`, etc.
+</ParamField>
+
+<ParamField query="cursor" type="string">
+  Pagination cursor from the previous response.
+</ParamField>
+
+<ParamField query="limit" type="number">
+  Number of items to return (default 20, max 100).
+</ParamField>
+
+```bash
+curl "https://api.mention.earth/feed/mtn?type=for_you&limit=20" \
+  -H "Authorization: Bearer <token>"
+```
+
+#### Peek latest
+
+Check for new posts without consuming the full feed response.
+
+```
+GET /feed/mtn/peek
+```
+
+#### Record interaction
+
+Record a user interaction (impression, like, repost, etc.) for feed ranking signals.
+
+```
+POST /feed/mtn/interactions
+```
+
+---
+
+### Replies feed
+
+Retrieve replies to a specific post.
+
+```
+GET /feed/replies/:parentId
+```
+
+<ParamField path="parentId" type="string" required>
+  ID of the parent post.
+</ParamField>
+
+```bash
+curl "https://api.mention.earth/feed/replies/64a1b2c3d4e5f6a7b8c9d0e1"
+```
+
+---
+
+### User profile feed
+
+Retrieve the public posts for a user's profile page.
+
+```
+GET /feed/user/:userId
+```
+
+<ParamField path="userId" type="string" required>
+  Oxy user ID of the profile to load.
+</ParamField>
+
+```bash
+curl https://api.mention.earth/feed/user/user_abc123
+```
+
+#### Pinned post
+
+```
+GET /feed/user/:userId/pinned
+```
+
+Returns the user's pinned post, if any.
+
+---
+
+### Feed item by ID
+
+Retrieve a single feed item (post) by its ID, hydrated for feed display.
+
+```
+GET /feed/item/:id
+```
+
+---
+
+### Feed actions
+
+The following action endpoints require authentication:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/feed/reply` | Create a reply to a post. |
+| `POST` | `/feed/repost` | Repost a post. |
+| `DELETE` | `/feed/:postId/repost` | Undo a repost. |
+| `POST` | `/feed/like` | Like a post. |
+| `POST` | `/feed/unlike` | Unlike a post. |
+| `POST` | `/feed/:postId/save` | Save (bookmark) a post. |
+| `DELETE` | `/feed/:postId/save` | Remove a bookmark. |
+
+```bash
+curl -X POST https://api.mention.earth/feed/like \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"postId": "64a1b2c3d4e5f6a7b8c9d0e1"}'
+```
+
+---
+
+## Custom feeds
+
+Custom feeds let users curate timelines from specific authors and keywords. All custom feed endpoints are mounted under `/feeds` and require authentication.
+
+### Custom feed object
+
+<ResponseField name="id" type="string">
+  Unique feed identifier.
+</ResponseField>
+
+<ResponseField name="title" type="string">
+  Display name of the feed.
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Optional description.
+</ResponseField>
+
+<ResponseField name="isPublic" type="boolean">
+  Whether the feed is visible to other users.
+</ResponseField>
+
+<ResponseField name="memberOxyUserIds" type="array">
+  Oxy user IDs whose posts are included in the feed.
+</ResponseField>
+
+<ResponseField name="keywords" type="array">
+  Keywords that posts must match to appear in the feed.
+</ResponseField>
+
+<ResponseField name="includeReplies" type="boolean">
+  Whether reply posts are included.
+</ResponseField>
+
+<ResponseField name="includeReposts" type="boolean">
+  Whether repost posts are included.
+</ResponseField>
+
+<ResponseField name="subscriberCount" type="number">
+  Number of users who have liked/subscribed to this feed.
+</ResponseField>
+
+---
+
+### Create a custom feed
+
+```
+POST /feeds
+```
+
+<ParamField body="title" type="string" required>
+  Display name for the feed.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Optional description.
+</ParamField>
+
+<ParamField body="isPublic" type="boolean">
+  Whether the feed is publicly discoverable (default `false`).
+</ParamField>
+
+<ParamField body="memberOxyUserIds" type="array">
+  User IDs to include as feed authors.
+</ParamField>
+
+<ParamField body="keywords" type="array">
+  Keywords for content filtering.
+</ParamField>
+
+<ParamField body="includeReplies" type="boolean">
+  Include reply posts (default `true`).
+</ParamField>
+
+<ParamField body="includeReposts" type="boolean">
+  Include repost posts (default `true`).
+</ParamField>
+
+<ParamField body="language" type="string">
+  BCP 47 language code to filter posts by language.
+</ParamField>
+
+<ParamField body="category" type="string">
+  Category label for marketplace discovery.
+</ParamField>
+
+<ParamField body="tags" type="array">
+  Tags for marketplace search.
+</ParamField>
+
+```bash
+curl -X POST https://api.mention.earth/feeds \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Open Source News",
+    "keywords": ["opensource", "linux", "foss"],
+    "isPublic": true
+  }'
+```
+
+---
+
+### List feeds
+
+```
+GET /feeds
+```
+
+<ParamField query="mine" type="boolean">
+  Return only feeds owned by the authenticated user.
+</ParamField>
+
+<ParamField query="publicOnly" type="boolean">
+  Return only public feeds.
+</ParamField>
+
+<ParamField query="search" type="string">
+  Search feeds by title, description, or keywords.
+</ParamField>
+
+<ParamField query="userId" type="string">
+  Return feeds owned by a specific user ID.
+</ParamField>
+
+---
+
+### Get a custom feed
+
+```
+GET /feeds/:id
+```
+
+---
+
+### Update a custom feed
+
+```
+PUT /feeds/:id
+```
+
+Only the feed owner can update. Accepts the same fields as `POST /feeds`.
+
+---
+
+### Delete a custom feed
+
+```
+DELETE /feeds/:id
+```
+
+Only the feed owner can delete their feed.
+
+---
+
+### Feed timeline
+
+Load the post timeline for a custom feed.
+
+```
+GET /feeds/:id/timeline
+```
+
+<ParamField path="id" type="string" required>
+  Custom feed ID.
+</ParamField>
+
+<ParamField query="limit" type="number">
+  Number of posts per page (default 20, max 100).
+</ParamField>
+
+<ParamField query="cursor" type="string">
+  Cursor-based pagination. Pass the `nextCursor` from the previous response.
+</ParamField>
+
+```bash
+curl "https://api.mention.earth/feeds/64a1b2c3/timeline?limit=20" \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### Manage feed members
+
+```
+POST   /feeds/:id/members
+DELETE /feeds/:id/members
+```
+
+<ParamField body="userIds" type="array" required>
+  Array of Oxy user IDs to add or remove.
+</ParamField>
+
+---
+
+### Like / unlike a feed
+
+Subscribe to a feed by liking it.
+
+```
+POST   /feeds/:id/like
+DELETE /feeds/:id/like
+```
+
+---
+
+### Feed marketplace
+
+Browse public feeds.
+
+```
+GET /feeds/marketplace
+```
+
+<ParamField query="category" type="string">
+  Filter by category.
+</ParamField>
+
+<ParamField query="search" type="string">
+  Full-text search across title, description, tags, and keywords.
+</ParamField>
+
+<ParamField query="sortBy" type="string">
+  Sort order: `trending` (default), `newest`, or `top_rated`.
+</ParamField>
+
+<ParamField query="page" type="number">
+  Page number (default 1).
+</ParamField>
+
+<ParamField query="limit" type="number">
+  Results per page (default 20, max 100).
+</ParamField>
+
+```
+GET /feeds/marketplace/categories
+```
+
+Returns available categories and their feed counts.

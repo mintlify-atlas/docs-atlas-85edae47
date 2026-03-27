@@ -1,0 +1,198 @@
+---
+title: "Posts and Feeds"
+description: "Create posts, browse feeds, and interact with content on Mention."
+---
+
+Posts are the core unit of content on Mention. Each post can contain text, media, polls, location data, mentions, and hashtags. Feeds aggregate posts from different sources and update in real time via Socket.IO.
+
+## Post model
+
+The `Post` model (defined in `packages/backend/src/models/Post.ts`) stores all post data in MongoDB:
+
+```typescript
+interface IPost {
+  oxyUserId?: string;       // Author's Oxy user ID
+  type: PostType;           // 'text' | 'media' | ...
+  content: PostContent;     // Text, media, location, poll, etc.
+  visibility: PostVisibility; // 'public' | 'followers' | ...
+  mentions?: string[];      // Array of mentioned oxyUserIds
+  hashtags?: string[];      // Array of hashtag strings
+  repostOf?: string;        // Original post ID (for reposts)
+  quoteOf?: string;         // Quoted post ID (for quote posts)
+  parentPostId?: string;    // Parent post ID (for replies)
+  threadId?: string;        // Thread group ID
+  status: 'draft' | 'published' | 'scheduled';
+  scheduledFor?: Date;
+  stats: PostStats;         // likesCount, repostsCount, etc.
+  location?: {
+    type: 'Point';
+    coordinates: [number, number]; // [longitude, latitude]
+    address?: string;
+  };
+}
+```
+
+`PostContent` holds the actual content fields:
+
+```typescript
+interface PostContent {
+  text: string;
+  media: MediaItem[];        // Images, videos, GIFs
+  attachments?: Attachment[]; // 'media' | 'poll' | 'article' | 'event' | 'location' | 'space'
+  location?: GeoPoint;       // Location shared within the post
+  pollId?: string;           // Reference to a Poll document
+  sources?: { url: string; title?: string }[];
+  article?: { articleId: string; title?: string; excerpt?: string };
+  event?: { eventId: string; name: string; date: string; location?: string };
+  room?: { roomId: string; title: string; status: 'scheduled' | 'live' | 'ended'; topic?: string; host: string };
+}
+```
+
+## Post types
+
+<CardGroup cols={2}>
+  <Card title="Original post" icon="pencil">
+    A new post with text and/or media. The default `type` is `text`.
+  </Card>
+  <Card title="Reply" icon="reply">
+    A post with a `parentPostId` linking it to a parent. Shown in thread context.
+  </Card>
+  <Card title="Repost" icon="repeat">
+    A post with `repostOf` set to the original post ID. Shares the original to your followers.
+  </Card>
+  <Card title="Quote post" icon="quote-left">
+    A post with `quoteOf` set. Embeds the quoted post below your new content.
+  </Card>
+</CardGroup>
+
+## Creating a post
+
+<Steps>
+  <Step title="Open the compose screen">
+    Tap the compose button in the main navigation. The compose screen is located at `packages/frontend/app/(app)/compose.tsx`.
+  </Step>
+  <Step title="Write your content">
+    Type your post text in the `MentionTextInput` field. You can type `@` to mention users and `#` to add hashtags inline.
+  </Step>
+  <Step title="Attach media or a poll">
+    Use the attachment toolbar to add images, videos, or GIFs. Alternatively, create a poll via the poll attachment option.
+  </Step>
+  <Step title="Set optional fields">
+    Add a location, source links, or schedule the post for a future time.
+  </Step>
+  <Step title="Submit">
+    Tap **Post**. The frontend sends a `POST /api/posts` request with the following shape:
+
+    ```typescript
+    {
+      content: {
+        text: "Your post text @[username](userId) #hashtag",
+        media: [{ id: "media123", type: "image" }],
+        pollId: "poll456" // optional
+      },
+      mentions: ["userId"],   // Extracted Oxy user IDs
+      hashtags: ["hashtag"],  // Extracted hashtag strings
+      visibility: "public",
+      status: "published"
+    }
+    ```
+  </Step>
+</Steps>
+
+<Tip>
+  To save a post as a draft, set `status: "draft"` in the request body. Drafts are retrievable via `GET /api/posts/drafts`.
+</Tip>
+
+## Post interactions
+
+The posts API (`packages/backend/src/routes/posts.ts`) exposes the following interaction endpoints:
+
+| Action | Endpoint | Description |
+|--------|----------|-------------|
+| Like | `POST /api/posts/:id/like` | Increments `stats.likesCount` |
+| Unlike | `DELETE /api/posts/:id/like` | Decrements `stats.likesCount` |
+| Repost | `POST /api/posts/:id/repost` | Creates a repost |
+| Quote | `POST /api/posts/:id/quote` | Creates a quote post |
+| Save / bookmark | `POST /api/posts/:id/save` | Adds to saved posts |
+| Unsave | `DELETE /api/posts/:id/save` | Removes from saved posts |
+| Translate | `POST /api/posts/:id/translate` | Translates post content |
+
+Post stats tracked per post:
+
+```typescript
+interface PostStats {
+  likesCount: number;
+  downvotesCount: number;
+  repostsCount: number;
+  commentsCount: number;
+  viewsCount: number;
+  sharesCount: number;
+}
+```
+
+The `PostActions` component (`packages/frontend/components/Post/PostActions.tsx`) renders the like, reply, repost, and share buttons. It supports both a standard like icon and a vote-pill style depending on the `voteStyle` setting.
+
+## Feed types
+
+Feeds are rendered by the `Feed` component at `packages/frontend/components/Feed/Feed.tsx`, which accepts a `type: FeedType` prop.
+
+<Tabs>
+  <Tab title="Home feed">
+    Shows posts from users you follow. Uses the `FeedType` value for the following feed. Updated in real time when new posts arrive via Socket.IO.
+  </Tab>
+  <Tab title="Explore feed">
+    Aggregates trending and public posts ranked by an engagement score. Queries use the `explore_feed_base_idx` compound MongoDB index.
+  </Tab>
+  <Tab title="Profile feed">
+    Shows posts by a specific user. Pass `userId` to the `Feed` component alongside the appropriate `FeedType`.
+  </Tab>
+  <Tab title="Saved posts">
+    Accessible via `GET /api/posts/saved`. Shows posts the authenticated user has bookmarked, organized into optional folders via `GET /api/posts/bookmarks/folders`.
+  </Tab>
+</Tabs>
+
+## Real-time updates
+
+The backend emits Socket.IO events on the default namespace when new posts are created. The `Feed` component subscribes to these events and prepends new posts to the list without requiring a manual refresh.
+
+<Note>
+  Pull-to-refresh is also supported via the `RefreshControl` component in the feed's `ScrollView`.
+</Note>
+
+## Post visibility and reply controls
+
+Posts support granular visibility and reply permission settings:
+
+```typescript
+type PostVisibility = 'public' | 'followers' | ...;
+type ReplyPermission = 'anyone' | 'followers' | 'following' | 'mentioned' | 'nobody';
+```
+
+Additional post-level controls:
+- `reviewReplies` — replies must be approved before becoming visible
+- `quotesDisabled` — prevents others from quote-posting this post
+
+## Location-aware posts
+
+Posts support two distinct location fields:
+1. **Content location** (`content.location`) — a location the author shares as part of the post content, visible to readers.
+2. **Creation location** (`location`) — metadata recording where the post was created, used for geospatial discovery features like `GET /api/posts/nearby`.
+
+Both fields use GeoJSON `Point` format with `[longitude, latitude]` coordinate ordering.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Mentions and hashtags" icon="at" href="/features/mentions-and-hashtags">
+    How @mentions and #hashtags work inside post content.
+  </Card>
+  <Card title="Notifications" icon="bell" href="/features/notifications">
+    Real-time notifications for likes, replies, and mentions.
+  </Card>
+  <Card title="Posts API" icon="code" href="/api/posts">
+    Full REST API reference for creating and managing posts.
+  </Card>
+  <Card title="Feeds API" icon="list" href="/api/feeds">
+    API reference for fetching and filtering feeds.
+  </Card>
+</CardGroup>

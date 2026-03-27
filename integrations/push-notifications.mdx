@@ -1,0 +1,239 @@
+---
+title: "Push Notifications"
+description: "Send real-time push notifications to iOS and Android devices via Firebase Cloud Messaging."
+---
+
+Mention uses [Firebase Cloud Messaging (FCM)](https://firebase.google.com/docs/cloud-messaging) to deliver push notifications to registered mobile devices. When the backend creates a notification (a like, reply, mention, follow, etc.), it automatically dispatches an FCM push to every device token registered for that user.
+
+<CardGroup cols={2}>
+  <Card title="iOS and Android" icon="smartphone">
+    A single FCM integration covers both platforms. Register tokens per-device so users receive notifications on all their devices.
+  </Card>
+  <Card title="Automatic dispatch" icon="bell">
+    Push delivery is triggered server-side whenever a notification record is created. No client polling required.
+  </Card>
+  <Card title="Multi-device support" icon="layers">
+    Each user can have multiple registered tokens — one per device. Tokens are identified by `deviceId` to avoid duplicates.
+  </Card>
+  <Card title="User control" icon="gear">
+    Users can manage which notification types they receive in **Settings → Notifications**. See [Notifications](/features/notifications) for the full preference model.
+  </Card>
+</CardGroup>
+
+## Setup
+
+<Steps>
+  <Step title="Create a Firebase project">
+    Go to the [Firebase Console](https://console.firebase.google.com), create a project, and enable Cloud Messaging.
+  </Step>
+  <Step title="Download the service account key">
+    In the Firebase Console, navigate to **Project Settings → Service Accounts** and click **Generate new private key**. Save the downloaded JSON file.
+  </Step>
+  <Step title="Base64-encode the service account JSON">
+    ```bash
+    base64 -i serviceAccount.json
+    ```
+    Copy the output — this is the value for `FIREBASE_SERVICE_ACCOUNT_BASE64`.
+  </Step>
+  <Step title="Set environment variables">
+    Add the following to `packages/backend/.env`:
+
+    ```bash
+    FIREBASE_PROJECT_ID=your-firebase-project-id
+    FIREBASE_SERVICE_ACCOUNT_BASE64=<base64-encoded-service-account-json>
+    ```
+  </Step>
+  <Step title="Restart the backend">
+    The FCM client is initialized at startup. Restart the backend service after setting the environment variables.
+  </Step>
+</Steps>
+
+## Environment variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `FIREBASE_PROJECT_ID` | Yes | Your Firebase project ID (found in Project Settings) |
+| `FIREBASE_SERVICE_ACCOUNT_BASE64` | Yes | Base64-encoded content of the service account JSON key file |
+
+<Warning>
+  Never commit the service account JSON or its base64 encoding to source control. Store it in a secrets manager or environment variable in your deployment platform.
+</Warning>
+
+## API endpoints
+
+### Register a device token
+
+```http
+POST /api/notifications/push-token
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `token` | string | Yes | The FCM device registration token |
+| `type` | string | Yes | Token type identifier (e.g. `"fcm"`) |
+| `platform` | string | Yes | Device platform: `"ios"` or `"android"` |
+| `deviceId` | string | No | Unique device identifier, used to prevent duplicate registrations |
+| `locale` | string | No | Device locale (e.g. `"en-US"`) for localized notification content |
+
+**Example:**
+
+```bash
+curl -X POST https://api.mention.earth/api/notifications/push-token \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "token": "fDFe3R...",
+    "type": "fcm",
+    "platform": "ios",
+    "deviceId": "iphone-of-alice",
+    "locale": "en-US"
+  }'
+```
+
+### Unregister a device token
+
+Call this when the user logs out or revokes notification permission on the device.
+
+```http
+DELETE /api/notifications/push-token
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `token` | string | Yes | The FCM device registration token to remove |
+
+**Example:**
+
+```bash
+curl -X DELETE https://api.mention.earth/api/notifications/push-token \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"token": "fDFe3R..."}'
+```
+
+## How it works
+
+```
+User action (like, reply, follow, …)
+        │
+        ▼
+Backend creates notification record
+        │
+        ▼
+FCM push dispatched to all registered tokens for the recipient
+        │
+        ▼
+FCM delivers to device(s)
+        │
+        ▼
+App receives push and displays system notification
+```
+
+1. A server-side event (e.g., someone likes your post) creates a notification record in the database.
+2. The backend immediately attempts to send an FCM push to every device token registered for the recipient user.
+3. FCM handles delivery to the device. If the device is offline, FCM queues the message for delivery when the device reconnects.
+4. The mobile app receives the push and displays it as a system notification.
+
+<Info>
+  Push notifications are delivered on a best-effort basis. If FCM returns an error for a token (e.g., token expired or app uninstalled), the backend should be updated to remove the stale token. Implement token refresh logic in the mobile client using the FCM SDK's `onTokenRefresh` callback.
+</Info>
+
+## User notification preferences
+
+Users control which notification types trigger a push in **Settings → Notifications**. The preference model is documented in [Notifications](/features/notifications).
+
+<Tip>
+  Always call `DELETE /api/notifications/push-token` when a user logs out of the app. This prevents push notifications from being sent to devices that are no longer associated with an active session.
+</Tip>
+
+## Mobile client integration
+
+<Tabs>
+  <Tab title="iOS (React Native)">
+    ```typescript
+    import messaging from '@react-native-firebase/messaging';
+
+    // Request permission and get token
+    await messaging().requestPermission();
+    const token = await messaging().getToken();
+
+    // Register with Mention backend
+    await fetch('https://api.mention.earth/api/notifications/push-token', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${mentionApiToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        token,
+        type: 'fcm',
+        platform: 'ios',
+        deviceId: await getUniqueDeviceId(),
+        locale: 'en-US',
+      }),
+    });
+
+    // Refresh token when FCM rotates it
+    messaging().onTokenRefresh(async (newToken) => {
+      await fetch('https://api.mention.earth/api/notifications/push-token', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${mentionApiToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          token: newToken,
+          type: 'fcm',
+          platform: 'ios',
+        }),
+      });
+    });
+    ```
+  </Tab>
+  <Tab title="Android (React Native)">
+    ```typescript
+    import messaging from '@react-native-firebase/messaging';
+
+    // Android does not require explicit permission request for FCM
+    const token = await messaging().getToken();
+
+    // Register with Mention backend
+    await fetch('https://api.mention.earth/api/notifications/push-token', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${mentionApiToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        token,
+        type: 'fcm',
+        platform: 'android',
+        deviceId: await getUniqueDeviceId(),
+        locale: 'en-US',
+      }),
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## Deployment checklist
+
+<Steps>
+  <Step title="Set Firebase environment variables">
+    Ensure `FIREBASE_PROJECT_ID` and `FIREBASE_SERVICE_ACCOUNT_BASE64` are set in your production environment. See [Environment Variables](/deployment/environment-variables) for the full list.
+  </Step>
+  <Step title="Verify FCM connectivity">
+    Check backend logs at startup for FCM initialization messages. A missing or malformed service account will log an error and disable push delivery silently.
+  </Step>
+  <Step title="Test end-to-end">
+    Install the app on a test device, register a token, trigger a notification (e.g., like a post from another account), and confirm the push arrives.
+  </Step>
+</Steps>

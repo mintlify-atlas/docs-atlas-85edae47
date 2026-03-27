@@ -1,0 +1,257 @@
+---
+title: "Search"
+description: "Full-text search for posts, trending hashtags, and topic discovery."
+---
+
+## Search posts
+
+Search for posts matching a query string. Supports advanced operators and multiple filters. Authentication required.
+
+```
+GET /search
+```
+
+### Query parameters
+
+<ParamField query="query" type="string">
+  The search query. Supports advanced operators (see below).
+</ParamField>
+
+<ParamField query="type" type="string">
+  Filter result type. Currently `all` (default) or `posts`.
+</ParamField>
+
+<ParamField query="limit" type="number">
+  Maximum results to return (default 20, max 100).
+</ParamField>
+
+<ParamField query="cursor" type="string">
+  Cursor for pagination. Pass `nextCursor` from the previous response.
+</ParamField>
+
+<ParamField query="dateFrom" type="string">
+  ISO 8601 date string. Only return posts created on or after this date.
+</ParamField>
+
+<ParamField query="dateTo" type="string">
+  ISO 8601 date string. Only return posts created on or before this date.
+</ParamField>
+
+<ParamField query="author" type="string">
+  Comma-separated list of Oxy user IDs. Filters posts by author.
+</ParamField>
+
+<ParamField query="minLikes" type="number">
+  Minimum number of likes a post must have.
+</ParamField>
+
+<ParamField query="minReposts" type="number">
+  Minimum number of reposts a post must have.
+</ParamField>
+
+<ParamField query="hasMedia" type="boolean">
+  When `true`, only return posts with media attachments.
+</ParamField>
+
+<ParamField query="mediaType" type="string">
+  Filter by media type: `image`, `video`, or `gif`.
+</ParamField>
+
+<ParamField query="language" type="string">
+  BCP 47 language code. Filters posts by their detected language.
+</ParamField>
+
+### Advanced search operators
+
+Operators can be embedded directly in the `query` string:
+
+| Operator | Example | Description |
+|---|---|---|
+| `from:` | `from:john_doe` | Posts by a specific username. |
+| `since:` | `since:2024-01-01` | Posts on or after this date (YYYY-MM-DD). |
+| `until:` | `until:2024-12-31` | Posts on or before this date (YYYY-MM-DD). |
+| `has:media` | `has:media` | Posts with media attachments. |
+| `has:links` | `has:links` | Posts containing URLs. |
+| `min_likes:` | `min_likes:100` | Posts with at least N likes. |
+| `min_reposts:` | `min_reposts:10` | Posts with at least N reposts. |
+
+Operators can be combined with free text:
+
+```
+query=open source from:torvalds since:2024-01-01 min_likes:50
+```
+
+<Warning>
+  Date ranges may not exceed the configured maximum (default 365 days). Requests with ranges beyond this limit return `400 Bad Request`.
+</Warning>
+
+<Tabs>
+  <Tab title="Request">
+    ```bash
+    curl -G https://api.mention.earth/search \
+      -H "Authorization: Bearer <token>" \
+      --data-urlencode "query=open source has:links" \
+      --data-urlencode "limit=20"
+    ```
+  </Tab>
+  <Tab title="Response">
+    ```json
+    {
+      "posts": [
+        {
+          "id": "64a1b2c3d4e5f6a7b8c9d0e1",
+          "content": { "text": "Great open source project..." },
+          "stats": { "likesCount": 42, "repostsCount": 7 },
+          "createdAt": "2024-01-15T12:00:00.000Z"
+        }
+      ],
+      "hasMore": false,
+      "nextCursor": null
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Response fields
+
+<ResponseField name="posts" type="array">
+  List of matching posts, hydrated with author profiles and viewer-specific flags.
+</ResponseField>
+
+<ResponseField name="hasMore" type="boolean">
+  Whether additional results exist.
+</ResponseField>
+
+<ResponseField name="nextCursor" type="string">
+  Pass as `cursor` to load the next page. Omitted when `hasMore` is `false`.
+</ResponseField>
+
+---
+
+## Trending
+
+All trending endpoints are public — no authentication required.
+
+### Get trending topics
+
+Returns the most active hashtags, topics, and entities based on recent post activity.
+
+```
+GET /trending
+```
+
+<ParamField query="limit" type="number">
+  Maximum number of items to return (default 20, max 50).
+</ParamField>
+
+<ParamField query="type" type="string">
+  Filter by type: `hashtag`, `topic`, or `entity`. Returns all types by default.
+</ParamField>
+
+```bash
+curl "https://api.mention.earth/trending?limit=10&type=hashtag"
+```
+
+```json
+{
+  "trending": [
+    {
+      "id": "opensource",
+      "text": "opensource",
+      "count": 1482,
+      "type": "hashtag"
+    }
+  ],
+  "summary": { "total": 10 },
+  "count": 10
+}
+```
+
+### Trending history
+
+Retrieve past trending snapshots.
+
+```
+GET /trending/history
+```
+
+<ParamField query="page" type="number">
+  Page number (default 1).
+</ParamField>
+
+<ParamField query="limit" type="number">
+  Batches per page (default 10, max 20).
+</ParamField>
+
+---
+
+## Hashtags
+
+All hashtag endpoints are public — no authentication required.
+
+### List trending hashtags
+
+Returns the most-used hashtags with trend direction indicators.
+
+```
+GET /hashtags
+```
+
+<ParamField query="limit" type="number">
+  Maximum number of hashtags to return (default 10, max 10).
+</ParamField>
+
+<ParamField query="days" type="number">
+  Look-back window in days (default 7).
+</ParamField>
+
+```bash
+curl "https://api.mention.earth/hashtags?limit=10&days=7"
+```
+
+```json
+{
+  "hashtags": [
+    {
+      "id": "opensource",
+      "text": "opensource",
+      "hashtag": "#opensource",
+      "count": 1482,
+      "created_at": "2024-01-15T11:00:00.000Z",
+      "direction": "up"
+    }
+  ]
+}
+```
+
+<ResponseField name="hashtags" type="array">
+  List of trending hashtag objects.
+  <Expandable title="properties">
+    <ResponseField name="id" type="string">Hashtag text (lowercase, without `#`).</ResponseField>
+    <ResponseField name="hashtag" type="string">Hashtag with `#` prefix.</ResponseField>
+    <ResponseField name="count" type="number">Usage count within the requested window.</ResponseField>
+    <ResponseField name="direction" type="string">Trend direction: `up`, `down`, or `flat`.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Search hashtags
+
+Search for hashtags matching a prefix or substring.
+
+```
+POST /hashtags/search
+```
+
+<ParamField body="query" type="string" required>
+  The search string to match against hashtag text.
+</ParamField>
+
+```bash
+curl -X POST https://api.mention.earth/hashtags/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "open"}'
+```
+
+```json
+{ "data": ["opensource", "opendata", "openai"] }
+```

@@ -1,0 +1,491 @@
+---
+title: "Posts"
+description: "Create, read, interact with, and delete posts on Mention."
+---
+
+All post endpoints are mounted under `/posts` and require authentication unless noted.
+
+## Post object
+
+<ResponseField name="id" type="string">
+  Unique post identifier (MongoDB ObjectId).
+</ResponseField>
+
+<ResponseField name="oxyUserId" type="string">
+  ID of the author in the Oxy identity system.
+</ResponseField>
+
+<ResponseField name="type" type="string">
+  Post type: `text`, `image`, `video`, `gif`, or `article`.
+</ResponseField>
+
+<ResponseField name="content" type="object">
+  The post's content payload.
+  <Expandable title="properties">
+    <ResponseField name="text" type="string">
+      Text body of the post.
+    </ResponseField>
+    <ResponseField name="media" type="array">
+      Array of media items, each with `id` and `type` (`image`, `video`, `gif`).
+    </ResponseField>
+    <ResponseField name="attachments" type="array">
+      Structured attachments: `poll`, `article`, `event`, `location`, `sources`, `space`.
+    </ResponseField>
+    <ResponseField name="location" type="object">
+      GeoJSON Point shared by the user as part of the post (visible to readers).
+    </ResponseField>
+    <ResponseField name="pollId" type="string">
+      Reference to a separate Poll document, if attached.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="visibility" type="string">
+  `public`, `followers`, or `private`.
+</ResponseField>
+
+<ResponseField name="stats" type="object">
+  Engagement counters.
+  <Expandable title="properties">
+    <ResponseField name="likesCount" type="number">Total likes.</ResponseField>
+    <ResponseField name="repostsCount" type="number">Total reposts.</ResponseField>
+    <ResponseField name="commentsCount" type="number">Total replies.</ResponseField>
+    <ResponseField name="viewsCount" type="number">Total views.</ResponseField>
+    <ResponseField name="sharesCount" type="number">Total shares.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="metadata" type="object">
+  Viewer-specific flags (computed per request).
+  <Expandable title="properties">
+    <ResponseField name="isLiked" type="boolean">Whether the authenticated user has liked this post.</ResponseField>
+    <ResponseField name="isReposted" type="boolean">Whether the authenticated user has reposted this post.</ResponseField>
+    <ResponseField name="isSaved" type="boolean">Whether the authenticated user has saved this post.</ResponseField>
+    <ResponseField name="isPinned" type="boolean">Whether the post is pinned on the author's profile.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="hashtags" type="array">
+  List of hashtag strings extracted from the post text.
+</ResponseField>
+
+<ResponseField name="mentions" type="array">
+  Oxy user IDs mentioned in the post.
+</ResponseField>
+
+<ResponseField name="parentPostId" type="string">
+  Present if this post is a reply. References the parent post ID.
+</ResponseField>
+
+<ResponseField name="repostOf" type="string">
+  Present if this is a repost. References the original post ID.
+</ResponseField>
+
+<ResponseField name="quoteOf" type="string">
+  Present if this is a quote post. References the quoted post ID.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  `published`, `draft`, or `scheduled`.
+</ResponseField>
+
+<ResponseField name="createdAt" type="string">
+  ISO 8601 creation timestamp.
+</ResponseField>
+
+---
+
+## List posts
+
+Returns a paginated list of posts. Supports filtering by hashtag, topic, or location.
+
+```
+GET /posts
+```
+
+<ParamField query="limit" type="number">
+  Number of posts to return (default 20).
+</ParamField>
+
+<ParamField query="cursor" type="string">
+  Cursor for pagination (last post ID from the previous page).
+</ParamField>
+
+```bash
+curl https://api.mention.earth/posts
+```
+
+---
+
+## Create a post
+
+Publish a new post. Authentication required.
+
+```
+POST /posts
+```
+
+<ParamField body="text" type="string">
+  Text content of the post.
+</ParamField>
+
+<ParamField body="media" type="array">
+  Array of media item objects, each with `id` (string) and `type` (`image` | `video` | `gif`).
+</ParamField>
+
+<ParamField body="visibility" type="string">
+  `public` (default), `followers`, or `private`.
+</ParamField>
+
+<ParamField body="location" type="object">
+  GeoJSON Point to attach to the post. Requires `type: "Point"` and `coordinates: [longitude, latitude]`.
+</ParamField>
+
+<ParamField body="parentPostId" type="string">
+  ID of the post this is a reply to.
+</ParamField>
+
+<ParamField body="quoteOf" type="string">
+  ID of the post being quoted.
+</ParamField>
+
+<ParamField body="hashtags" type="array">
+  Array of hashtag strings (without the `#` prefix).
+</ParamField>
+
+<ParamField body="status" type="string">
+  `published` (default), `draft`, or `scheduled`.
+</ParamField>
+
+<ParamField body="scheduledFor" type="string">
+  ISO 8601 datetime. Required when `status` is `scheduled`.
+</ParamField>
+
+<Tabs>
+  <Tab title="Request">
+    ```bash
+    curl -X POST https://api.mention.earth/posts \
+      -H "Authorization: Bearer <token>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "content": {
+          "text": "Hello, Mention! #firstpost"
+        },
+        "visibility": "public"
+      }'
+    ```
+  </Tab>
+  <Tab title="Response">
+    ```json
+    {
+      "id": "64a1b2c3d4e5f6a7b8c9d0e1",
+      "oxyUserId": "user_abc123",
+      "type": "text",
+      "content": {
+        "text": "Hello, Mention! #firstpost"
+      },
+      "visibility": "public",
+      "hashtags": ["firstpost"],
+      "stats": {
+        "likesCount": 0,
+        "repostsCount": 0,
+        "commentsCount": 0,
+        "viewsCount": 0,
+        "sharesCount": 0
+      },
+      "status": "published",
+      "createdAt": "2024-01-15T12:00:00.000Z"
+    }
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Get a post
+
+Retrieve a single post by ID.
+
+```
+GET /posts/:id
+```
+
+<ParamField path="id" type="string" required>
+  Post ID.
+</ParamField>
+
+```bash
+curl https://api.mention.earth/posts/64a1b2c3d4e5f6a7b8c9d0e1
+```
+
+---
+
+## Update a post
+
+Edit the content of an existing post. Authentication required.
+
+```
+PUT /posts/:id
+```
+
+<ParamField path="id" type="string" required>
+  ID of the post to update.
+</ParamField>
+
+---
+
+## Delete a post
+
+Permanently delete a post. Only the post author can delete their own posts.
+
+```
+DELETE /posts/:id
+```
+
+<ParamField path="id" type="string" required>
+  ID of the post to delete.
+</ParamField>
+
+```bash
+curl -X DELETE https://api.mention.earth/posts/64a1b2c3d4e5f6a7b8c9d0e1 \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+## Like a post
+
+Add a like to a post. Authentication required.
+
+```
+POST /posts/:id/like
+```
+
+<ParamField path="id" type="string" required>
+  ID of the post to like.
+</ParamField>
+
+```bash
+curl -X POST https://api.mention.earth/posts/64a1b2c3d4e5f6a7b8c9d0e1/like \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+## Unlike a post
+
+Remove a like from a post. Authentication required.
+
+```
+DELETE /posts/:id/like
+```
+
+---
+
+## Repost
+
+Repost (boost) a post. Authentication required.
+
+```
+POST /posts/:id/repost
+```
+
+<ParamField path="id" type="string" required>
+  ID of the post to repost.
+</ParamField>
+
+```bash
+curl -X POST https://api.mention.earth/posts/64a1b2c3d4e5f6a7b8c9d0e1/repost \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+## Quote a post
+
+Create a quote post that embeds another post. Authentication required.
+
+```
+POST /posts/:id/quote
+```
+
+---
+
+## Save a post
+
+Bookmark a post. Authentication required.
+
+```
+POST /posts/:id/save
+```
+
+To remove a bookmark:
+
+```
+DELETE /posts/:id/save
+```
+
+---
+
+## Get saved posts
+
+Retrieve all posts bookmarked by the authenticated user.
+
+```
+GET /posts/saved
+```
+
+```bash
+curl https://api.mention.earth/posts/saved \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+## Get drafts
+
+List posts saved as drafts by the authenticated user.
+
+```
+GET /posts/drafts
+```
+
+---
+
+## Get scheduled posts
+
+List posts the authenticated user has scheduled for future publication.
+
+```
+GET /posts/scheduled
+```
+
+---
+
+## Posts by hashtag
+
+Retrieve posts containing a specific hashtag.
+
+```
+GET /posts/hashtag/:hashtag
+```
+
+<ParamField path="hashtag" type="string" required>
+  Hashtag to filter by (without the `#` prefix).
+</ParamField>
+
+```bash
+curl https://api.mention.earth/posts/hashtag/opensource
+```
+
+---
+
+## Posts by topic
+
+Retrieve posts associated with an extracted topic.
+
+```
+GET /posts/topic/:topic
+```
+
+---
+
+## Nearby posts
+
+Retrieve posts created near a geographic coordinate.
+
+```
+GET /posts/nearby
+```
+
+<ParamField query="longitude" type="number" required>
+  Longitude of the center point.
+</ParamField>
+
+<ParamField query="latitude" type="number" required>
+  Latitude of the center point.
+</ParamField>
+
+<ParamField query="radius" type="number">
+  Search radius in meters (default 5000).
+</ParamField>
+
+---
+
+## Post likes
+
+List users who have liked a post.
+
+```
+GET /posts/:id/likes
+```
+
+---
+
+## Post reposts
+
+List users who have reposted a post.
+
+```
+GET /posts/:id/reposts
+```
+
+---
+
+## Translate a post
+
+Request a machine translation of a post's text content. Authentication required.
+
+```
+POST /posts/:id/translate
+```
+
+<ParamField body="targetLanguage" type="string" required>
+  BCP 47 language code for the target language (e.g. `es`, `fr`, `de`).
+</ParamField>
+
+---
+
+## Create a thread
+
+Publish multiple posts as a connected thread in a single request. Authentication required.
+
+```
+POST /posts/thread
+```
+
+<ParamField body="posts" type="array" required>
+  Ordered array of post content objects. Each element follows the same shape as the `POST /posts` body.
+</ParamField>
+
+---
+
+## Threadgate (reply controls)
+
+Control who can reply to a post.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `PUT` | `/posts/:id/threadgate` | Set or update reply permissions. |
+| `GET` | `/posts/:id/threadgate` | Get the current threadgate for a post. |
+| `DELETE` | `/posts/:id/threadgate` | Remove the threadgate, allowing anyone to reply. |
+
+<ParamField body="allow" type="array">
+  Array of permission values: `anyone`, `followers`, `following`, `mentioned`, `nobody`.
+</ParamField>
+
+---
+
+## Postgate (quote controls)
+
+Control whether a post can be quoted.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `PUT` | `/posts/:id/postgate` | Set or update quote permissions. |
+| `GET` | `/posts/:id/postgate` | Get the current postgate for a post. |
+| `DELETE` | `/posts/:id/postgate` | Remove the postgate. |
+
+<ParamField body="disableQuotes" type="boolean">
+  Set to `true` to prevent anyone from quoting this post.
+</ParamField>

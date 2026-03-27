@@ -1,0 +1,119 @@
+---
+title: "API Overview"
+description: "REST API reference for the Mention social network platform."
+---
+
+## Base URL
+
+```
+https://api.mention.earth
+```
+
+All endpoints accept and return `application/json` unless otherwise noted.
+
+## Authentication
+
+Most write endpoints and some read endpoints require a JWT Bearer token. Pass it in the `Authorization` header:
+
+```
+Authorization: Bearer <token>
+```
+
+See the [Authentication](/api/authentication) page for how to obtain a token.
+
+## Response format
+
+All successful responses are JSON objects. Collection endpoints wrap results in a named array and include pagination metadata:
+
+```json
+{
+  "posts": [...],
+  "hasMore": true,
+  "nextCursor": "68012abc..."
+}
+```
+
+## Error format
+
+Errors follow a consistent shape:
+
+```json
+{
+  "message": "Human-readable description",
+  "error": "ERROR_CODE"
+}
+```
+
+Common HTTP status codes:
+
+| Code | Meaning |
+|------|---------|
+| 200  | OK |
+| 201  | Created |
+| 202  | Accepted (async processing) |
+| 400  | Bad Request — invalid parameters |
+| 401  | Unauthorized — missing or invalid token |
+| 403  | Forbidden — authenticated but not allowed |
+| 404  | Not Found |
+| 429  | Too Many Requests — rate limit exceeded |
+| 500  | Internal Server Error |
+
+## Rate limiting
+
+The API enforces multiple layers of rate limiting backed by Redis for distributed enforcement.
+
+| Layer | Limit |
+|-------|-------|
+| Global (all routes) | 1,000 requests per 15 minutes per IP |
+| Feed routes — per IP | 10 requests per second |
+| Feed routes — authenticated | 100 requests per minute |
+| Feed routes — unauthenticated | 50 requests per minute |
+| ActivityPub protocol routes | 30 requests per minute per IP |
+| Federation API routes | 200 requests per minute per user or IP |
+
+When a limit is exceeded the server responds with `429 Too Many Requests`. Implement exponential backoff in your client.
+
+Rate limit headers follow the `RateLimit-*` standard (`standardHeaders: true`).
+
+## Health check
+
+```
+GET /health
+```
+
+No authentication required. Returns the current health of the service and its dependencies.
+
+```json
+{
+  "status": "healthy",
+  "timestamp": "2024-01-15T12:00:00.000Z"
+}
+```
+
+`status` is `"healthy"` (HTTP 200) when both MongoDB and Redis are connected, `"degraded"` (HTTP 503) when either is unavailable, and `"unhealthy"` (HTTP 503) on unexpected errors.
+
+## Available resources
+
+<CardGroup cols={2}>
+  <Card title="Authentication" href="/api/authentication">
+    Obtain and refresh JWT tokens. Sign up and log in.
+  </Card>
+  <Card title="Posts" href="/api/posts">
+    Create, read, like, repost, quote, and delete posts.
+  </Card>
+  <Card title="Users" href="/api/users">
+    Fetch user profiles and manage follow relationships.
+  </Card>
+  <Card title="Feeds" href="/api/feeds">
+    Home, explore, and custom curated feeds.
+  </Card>
+  <Card title="Notifications" href="/api/notifications">
+    In-app notifications and device push tokens.
+  </Card>
+  <Card title="Search" href="/api/search">
+    Full-text search for posts, trending hashtags.
+  </Card>
+  <Card title="Federation" href="/api/federation">
+    ActivityPub protocol endpoints and fediverse API.
+  </Card>
+</CardGroup>

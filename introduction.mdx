@@ -1,0 +1,61 @@
+---
+title: Introduction
+description: Mention is an open-source, cross-platform social network inspired by Twitter/X, built with Expo React Native, Node.js, and MongoDB.
+---
+
+**Mention** is a universal social platform inspired by Twitter/X, designed for mobile and web. It features real-time feeds, user profiles, trends, notifications, and more. Built in a modern monorepo, Mention runs natively on iOS, Android, and in any web browser from a single shared codebase.
+
+The project is fully open-source under the MIT license and hosted at [github.com/OxyHQ/Mention](https://github.com/OxyHQ/Mention).
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Mobile & Web | Expo React Native (SDK 55), expo-router, NativeWind |
+| Backend | Node.js, Express.js v5, TypeScript |
+| Database | MongoDB 7 with Mongoose |
+| Real-time | Socket.IO v4 |
+| Auth | `@oxyhq/services` (JWT-based) |
+| AI | OpenAI via Vercel AI SDK, Alia SDK |
+| Audio/Video | LiveKit (`@livekit/react-native`) |
+| State | Zustand v5, TanStack React Query v5 |
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Posts & Feeds" icon="newspaper" href="/features/posts-and-feeds">
+    Create posts with text, media, and location. Explore a real-time global feed or follow a curated home timeline.
+  </Card>
+  <Card title="Mentions & Hashtags" icon="at" href="/features/mentions-and-hashtags">
+    Tag other users with `@username` and organize content with `#hashtags`. Trending topics surface in the Explore tab.
+  </Card>
+  <Card title="Notifications" icon="bell" href="/features/notifications">
+    Real-time in-app notifications powered by Socket.IO, with Firebase Cloud Messaging (FCM) push support for iOS and Android.
+  </Card>
+  <Card title="Rooms & Spaces" icon="microphone" href="/features/rooms-and-spaces">
+    Host live audio/video spaces using LiveKit, built in the dedicated `@mention/agora` package.
+  </Card>
+  <Card title="AI Assistant" icon="robot" href="/features/ai-assistant">
+    Chat with Alia, the built-in AI assistant powered by OpenAI and the `@alia.onl/sdk`, accessible at the `/ai` route.
+  </Card>
+  <Card title="Federation (ActivityPub)" icon="globe" href="/integrations/federation-activitypub">
+    Interact with Mastodon and other fediverse platforms. Every Mention user gets a `@username@mention.earth` identity.
+  </Card>
+  <Card title="Theming" icon="palette" href="/customization/theming">
+    Full light/dark mode support with a token-based theming system built on NativeWind (TailwindCSS v4).
+  </Card>
+  <Card title="Localization" icon="language" href="/customization/localization">
+    Multi-language support via `i18next` and `react-i18next` with translation files in `packages/frontend/locales/`.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Clone the repo, install dependencies, and run Mention locally in minutes.
+  </Card>
+  <Card title="Architecture" icon="building" href="/architecture">
+    Understand the monorepo layout, packages, and how the frontend and backend fit together.
+  </Card>
+</CardGroup>

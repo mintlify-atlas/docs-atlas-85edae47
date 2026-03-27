@@ -1,0 +1,57 @@
+---
+title: "Deployment Overview"
+description: "How Mention is deployed across DigitalOcean and Cloudflare."
+---
+
+Mention is deployed as three distinct components spread across two cloud platforms. The backend runs on DigitalOcean App Platform; both web frontends run on Cloudflare Pages. DNS for all three is managed through Cloudflare.
+
+## Architecture
+
+| Component | Platform | Domain | Description |
+|---|---|---|---|
+| `mention` | DigitalOcean App Platform | `api.mention.earth` | Node.js backend API + ActivityPub |
+| `mention-frontend` | Cloudflare Pages | `mention.earth` | Expo web frontend |
+| `agora-frontend` | Cloudflare Pages | `agora.mention.earth` | Agora web frontend |
+
+## Routing
+
+All traffic to the `mention.earth` zone is handled by Cloudflare, which routes requests to the correct origin based on path:
+
+| Path | Destination |
+|---|---|
+| `mention.earth/*` | `mention-frontend` (Cloudflare Pages) |
+| `mention.earth/.well-known/*` | 301 redirect → `api.mention.earth/.well-known/*` |
+| `mention.earth/ap/*` | 301 redirect → `api.mention.earth/ap/*` |
+| `agora.mention.earth/*` | `agora-frontend` (Cloudflare Pages) |
+| `api.mention.earth/*` | `mention` backend (DigitalOcean) |
+
+<Note>
+ActivityPub identity is `@user@mention.earth`. WebFinger and AP routes are redirected to `api.mention.earth` via Cloudflare zone-level Redirect Rules (phase `http_request_dynamic_redirect`) with `preserve_query_string: true`, so the federation domain stays `mention.earth` even though the backend lives on a separate subdomain.
+</Note>
+
+## DNS
+
+DNS is managed by Cloudflare for the `mention.earth` zone:
+
+| Record | Type | Target |
+|---|---|---|
+| `mention.earth` | CNAME | `mention-frontend.pages.dev` (via CF Pages custom domain) |
+| `agora.mention.earth` | CNAME | `agora-frontend.pages.dev` (via CF Pages custom domain) |
+| `api.mention.earth` | CNAME | `mention-production-mt7zg.ondigitalocean.app` (DNS-only) |
+
+## Deployment Guides
+
+<CardGroup cols={2}>
+  <Card title="Deploy to DigitalOcean" href="/deployment/digitalocean">
+    Backend deployment on DigitalOcean App Platform — build commands, environment variables, GitHub Actions workflow, and database setup.
+  </Card>
+  <Card title="Deploy to Cloudflare" href="/deployment/cloudflare">
+    Frontend deployment for `mention-frontend` and `agora-frontend` on Cloudflare Pages — build process, change detection, and SPA routing.
+  </Card>
+  <Card title="Environment Variables" href="/deployment/environment-variables">
+    Complete reference for all backend and platform-level environment variables.
+  </Card>
+  <Card title="Federation (ActivityPub)" href="/integrations/federation-activitypub">
+    How Mention federates with Mastodon and other fediverse platforms via ActivityPub.
+  </Card>
+</CardGroup>

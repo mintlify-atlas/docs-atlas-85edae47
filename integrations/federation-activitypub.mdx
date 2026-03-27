@@ -1,0 +1,208 @@
+---
+title: "ActivityPub Federation"
+description: "Connect Mention users with Mastodon and other fediverse platforms using the ActivityPub protocol."
+---
+
+Mention implements the [ActivityPub](https://www.w3.org/TR/activitypub/) protocol, making every user account part of the fediverse. A Mention user at `alice` automatically has the fediverse identity `@alice@mention.earth`, discoverable from Mastodon, Misskey, Pixelfed, and any other ActivityPub-compatible platform.
+
+<CardGroup cols={2}>
+  <Card title="Cross-platform follows" icon="users">
+    Mastodon users can follow Mention users and vice versa — replies, likes, and reposts propagate across instances.
+  </Card>
+  <Card title="Standard protocol" icon="globe">
+    Built on W3C ActivityPub and WebFinger, compatible with the entire fediverse ecosystem.
+  </Card>
+  <Card title="HTTP signatures" icon="shield">
+    All outgoing activities are signed with per-user RSA key pairs. Incoming activities are signature-verified before processing.
+  </Card>
+  <Card title="Delivery retry queue" icon="rotate-right">
+    Failed outgoing deliveries are retried automatically. Configure the maximum attempts with `FEDERATION_DELIVERY_RETRIES`.
+  </Card>
+</CardGroup>
+
+## How federation works
+
+Mention acts as a full ActivityPub server. When a remote instance (e.g., `mastodon.social`) wants to interact with a Mention user, it:
+
+1. Resolves the user via WebFinger at `/.well-known/webfinger`
+2. Fetches the Actor profile from `/ap/users/:username`
+3. Delivers activities (Follow, Like, Announce, etc.) to the user's inbox at `/ap/users/:username/inbox` or the shared inbox at `/ap/inbox`
+
+Mention verifies the HTTP signature on every inbound activity before processing it. Accepted activities are processed asynchronously — the inbox endpoint returns `202 Accepted` immediately.
+
+## Following a remote user
+
+<Steps>
+  <Step title="Open search">
+    Tap the search bar in the Mention app or navigate to the Explore page.
+  </Step>
+  <Step title="Enter the fediverse handle">
+    Type the full handle in `@user@instance` format, for example `@alice@mastodon.social`. Mention resolves the handle via WebFinger on the remote instance.
+  </Step>
+  <Step title="Follow from the profile">
+    Open the resolved profile and tap **Follow**. Mention sends a `Follow` activity to the remote actor's inbox. For accounts that require approval, the follow will show as pending until accepted.
+  </Step>
+</Steps>
+
+<Tip>
+  Remote posts from accounts you follow appear in your **Following** feed alongside native Mention posts.
+</Tip>
+
+## Public ActivityPub endpoints
+
+These endpoints implement the ActivityPub protocol and must be publicly reachable — they are called by other fediverse servers, not by the Mention frontend. No authentication is required.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/.well-known/webfinger?resource=acct:user@mention.earth` | WebFinger profile discovery |
+| `GET` | `/ap/users/:username` | Actor profile (ActivityPub `Person` object) |
+| `POST` | `/ap/users/:username/inbox` | Receive activities from remote instances |
+| `POST` | `/ap/inbox` | Shared inbox for all users |
+| `GET` | `/ap/users/:username/outbox` | Public posts as an `OrderedCollection` |
+| `GET` | `/ap/users/:username/followers` | Followers collection |
+| `GET` | `/ap/users/:username/following` | Following collection |
+
+### WebFinger example
+
+```bash
+curl 'https://mention.earth/.well-known/webfinger?resource=acct:alice@mention.earth'
+```
+
+```json
+{
+  "subject": "acct:alice@mention.earth",
+  "links": [
+    {
+      "rel": "self",
+      "type": "application/activity+json",
+      "href": "https://mention.earth/ap/users/alice"
+    }
+  ]
+}
+```
+
+WebFinger responses are cached in Redis for one hour (`Cache-Control: max-age=3600`).
+
+### Actor profile example
+
+```bash
+curl -H 'Accept: application/activity+json' \
+  'https://mention.earth/ap/users/alice'
+```
+
+```json
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://mention.earth/ap/users/alice",
+  "type": "Person",
+  "preferredUsername": "alice",
+  "name": "Alice",
+  "inbox": "https://mention.earth/ap/users/alice/inbox",
+  "outbox": "https://mention.earth/ap/users/alice/outbox",
+  "followers": "https://mention.earth/ap/users/alice/followers",
+  "following": "https://mention.earth/ap/users/alice/following",
+  "endpoints": { "sharedInbox": "https://mention.earth/ap/inbox" },
+  "publicKey": {
+    "id": "https://mention.earth/ap/users/alice#main-key",
+    "owner": "https://mention.earth/ap/users/alice",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\n..."
+  }
+}
+```
+
+If the request does not include an `Accept` header for ActivityPub content types, the endpoint redirects to the user's profile page on the Mention frontend.
+
+## API endpoints (auth required)
+
+These endpoints are used by the Mention frontend and require a valid Bearer token. They are rate-limited to 200 requests per minute per user.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/federation/search?q=user@instance` | Search fediverse handles |
+| `GET` | `/federation/lookup?handle=@user@instance` | Resolve a single handle to an actor profile |
+| `POST` | `/federation/follow` | Follow a remote actor |
+| `POST` | `/federation/unfollow` | Unfollow a remote actor |
+| `GET` | `/federation/following` | List federated accounts the current user follows |
+| `GET` | `/federation/followers` | List remote accounts following the current user |
+
+### Follow a remote actor
+
+```bash
+curl -X POST https://api.mention.earth/federation/follow \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"actorUri": "https://mastodon.social/users/alice"}'
+```
+
+```json
+{
+  "success": true,
+  "pending": true,
+  "actorUri": "https://mastodon.social/users/alice"
+}
+```
+
+`pending: true` means the remote account has follow approval enabled. The follow will be confirmed once the remote user accepts.
+
+### List federated following
+
+```bash
+curl https://api.mention.earth/federation/following \
+  -H 'Authorization: Bearer <token>'
+```
+
+```json
+{
+  "following": [
+    {
+      "actorUri": "https://mastodon.social/users/alice",
+      "handle": "alice",
+      "instance": "mastodon.social",
+      "fullHandle": "@alice@mastodon.social",
+      "displayName": "Alice",
+      "avatarUrl": "https://mastodon.social/...",
+      "isFollowing": true,
+      "isFollowPending": false
+    }
+  ]
+}
+```
+
+## Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `FEDERATION_DOMAIN` | `mention.earth` | Domain used in actor URLs and WebFinger responses |
+| `FEDERATION_ENABLED` | `true` | Set to `false` to disable all federation endpoints |
+| `FEDERATION_BLOCKED_DOMAINS` | _(none)_ | Comma-separated list of domains to block |
+| `FEDERATION_DELIVERY_RETRIES` | `5` | Maximum retry attempts for outgoing activity delivery |
+| `FEDERATION_MAX_CONTENT_LENGTH` | `50000` | Maximum byte size for incoming activity payloads |
+
+```bash
+FEDERATION_DOMAIN=mention.earth
+FEDERATION_ENABLED=true
+FEDERATION_BLOCKED_DOMAINS=bad.example.com,spam.instance
+FEDERATION_DELIVERY_RETRIES=5
+FEDERATION_MAX_CONTENT_LENGTH=50000
+```
+
+## Deployment requirements
+
+<Warning>
+  The `/.well-known/` and `/ap/` paths on your federation domain **must** route to the backend service, not the static frontend. If these paths return HTML, remote instances cannot discover or communicate with your users.
+</Warning>
+
+On DigitalOcean App Platform, configure path-based ingress routing so that `/.well-known/*` and `/ap/*` are forwarded to the backend component. See [Deployment: DigitalOcean](/deployment/digitalocean) for the full ingress configuration.
+
+All other ActivityPub protocol endpoints are rate-limited to 30 requests per minute per IP address to reduce abuse as a potential DDoS vector.
+
+## Key source files
+
+| File | Purpose |
+|------|---------|
+| `packages/backend/src/routes/webfinger.routes.ts` | WebFinger endpoint with Redis caching |
+| `packages/backend/src/routes/federation.routes.ts` | ActivityPub protocol endpoints (actor, inbox, outbox, followers, following) |
+| `packages/backend/src/routes/federation.api.routes.ts` | Frontend-facing API endpoints (follow, unfollow, search) |
+| `packages/backend/src/services/FederationService.ts` | Core federation logic: activity processing, outbox delivery, actor caching |
+| `packages/backend/src/services/FederationJobScheduler.ts` | Background jobs: actor refresh, delivery retry |
+| `packages/backend/src/utils/federation/crypto.ts` | HTTP signature signing and verification |

@@ -1,0 +1,85 @@
+---
+title: "AI Assistant"
+description: "Alia is the built-in AI assistant accessible from the /ai route in Mention."
+---
+
+Mention includes a built-in AI assistant named Alia. It is accessible from the `/ai` route in the frontend and is powered by the `@alia.onl/sdk` package.
+
+## Accessing the assistant
+
+Navigate to `/ai` in the app. The route is handled by `packages/frontend/app/(app)/ai/index.tsx`, which renders the `AliaChatScreen` component from `@alia.onl/sdk`.
+
+## What users can do
+
+<CardGroup cols={2}>
+  <Card title="Ask questions" icon="message">
+    Ask Alia anything — get answers about the latest news, platform features, or general knowledge.
+  </Card>
+  <Card title="Edit images" icon="image">
+    Use the **Edit image** suggestion to get AI-assisted image editing help.
+  </Card>
+  <Card title="Get help" icon="circle-question">
+    Alia responds to the greeting and subtitle configured in the screen and guides users through available actions.
+  </Card>
+  <Card title="Custom suggestions" icon="zap">
+    The welcome screen surfaces pre-built prompt suggestions. Currently: **Latest news** and **Edit image**.
+  </Card>
+</CardGroup>
+
+## Integration details
+
+The AI screen is a thin wrapper around `AliaChatScreen`:
+
+```tsx
+// packages/frontend/app/(app)/ai/index.tsx
+import { AliaChatScreen } from "@alia.onl/sdk";
+import { useAuth } from "@oxyhq/services";
+import { useTranslation } from "react-i18next";
+
+export default function AiScreen() {
+  const { user } = useAuth();
+  const { t } = useTranslation();
+
+  return (
+    <AliaChatScreen
+      welcomeGreeting={`${t("Hello")}, ${user?.username || "there"}.`}
+      welcomeSubtitle={t("How can I help you today?")}
+      welcomeSuggestions={[
+        { label: t("Latest news"), prompt: t("What are the latest news?") },
+        { label: t("Edit image"), prompt: t("Help me edit an image") },
+      ]}
+    />
+  );
+}
+```
+
+### SDK dependency
+
+The Alia SDK is declared as a frontend dependency:
+
+```json
+"@alia.onl/sdk": "^3.1.0"
+```
+
+### Localization
+
+All visible strings — the greeting, subtitle, and suggestion labels — are passed through `react-i18next`'s `t()` function, making them fully translatable. See [Localization](/customization/localization) for how to add or update translations.
+
+### Authentication context
+
+The screen uses `useAuth()` from `@oxyhq/services` to read the authenticated user's `username` and include it in the welcome greeting. If the user is not authenticated or the username is unavailable, the greeting falls back to `"there"`.
+
+<Note>
+  `AliaChatScreen` manages its own conversation state and API communication internally via the `@alia.onl/sdk`. No additional backend configuration is required on the Mention side beyond installing the package.
+</Note>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Localization" icon="globe" href="/customization/localization">
+    Translate the AI assistant's greeting and suggestion labels.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get the Mention app running locally.
+  </Card>
+</CardGroup>

@@ -1,0 +1,253 @@
+---
+title: "MCP Server"
+description: "Give AI assistants like Claude and Cursor direct access to Mention data via the Model Context Protocol."
+---
+
+Mention ships a [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that exposes Mention data and actions as tools an AI assistant can call. This lets Claude, Cursor, and other MCP-compatible clients read your feed, search posts, create content, manage lists, and more — all without leaving your AI workflow.
+
+<CardGroup cols={2}>
+  <Card title="stdio transport" icon="terminal">
+    The default mode. Ideal for local development and Claude Desktop, where the MCP client spawns the server as a subprocess.
+  </Card>
+  <Card title="HTTP/SSE transport" icon="server">
+    Exposes a long-running HTTP server. Supports both Streamable HTTP (protocol 2025-11-25) and SSE (protocol 2024-11-05) for remote or multi-client setups.
+  </Card>
+  <Card title="35+ tools" icon="wrench">
+    Covers posts, feeds, search, interactions, lists, polls, notifications, and hashtags — every major Mention feature.
+  </Card>
+  <Card title="Bearer auth" icon="key">
+    Pass your Mention API token as a Bearer header. The HTTP server plumbs it through per-request so multiple users can share one server instance.
+  </Card>
+</CardGroup>
+
+## Prerequisites
+
+- [Bun](https://bun.sh) runtime installed
+- A Mention API token
+- The `packages/mcp` directory from the [Mention repository](https://github.com/OxyHQ/Mention)
+
+## Running the server
+
+<Tabs>
+  <Tab title="stdio">
+    The stdio transport is the default. The MCP client (e.g., Claude Desktop) spawns the server as a subprocess and communicates over stdin/stdout.
+
+    ```bash
+    MENTION_API_URL=https://api.mention.earth bun server.ts
+    ```
+
+    Console output is redirected to stderr so it does not interfere with the MCP protocol stream.
+  </Tab>
+  <Tab title="HTTP / SSE">
+    The HTTP server supports two sub-protocols on the same port:
+
+    - **Streamable HTTP** (protocol `2025-11-25`) — `POST /mcp`, `GET /mcp`, `DELETE /mcp`
+    - **SSE** (protocol `2024-11-05`) — `GET /sse`, `POST /messages`
+
+    ```bash
+    MENTION_API_URL=https://api.mention.earth MCP_PORT=3100 bun server-http.ts
+    ```
+
+    The server listens on `0.0.0.0:3100` by default. A health check is available at `GET /health`.
+
+    ```bash
+    curl http://localhost:3100/health
+    # {"status":"ok","server":"mention-mcp","transport":["streamable-http","sse"]}
+    ```
+
+    Idle Streamable HTTP sessions are cleaned up automatically after 30 minutes of inactivity.
+  </Tab>
+</Tabs>
+
+## Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MENTION_API_URL` | `https://api.mention.earth` | Base URL of the Mention API |
+| `MCP_PORT` | `3100` | Port for the HTTP/SSE server (HTTP transport only) |
+
+## Available tools
+
+All 35+ tools are registered in `packages/mcp/lib/create-server.ts` and grouped by domain.
+
+### Posts (`posts.ts`)
+
+| Tool | Description |
+|------|-------------|
+| `create-post` | Create a new post. Supports text, hashtags, mentions, visibility, reply permissions, sources, scheduling, and language. |
+| `create-thread` | Create a multi-post thread (minimum 2 posts). |
+| `get-post` | Fetch a single post by ID. |
+| `update-post` | Update an existing post's text, visibility, or hashtags. |
+| `delete-post` | Delete a post by ID. |
+| `get-drafts` | List your draft posts with pagination. |
+| `get-scheduled-posts` | List your scheduled posts with pagination. |
+
+### Feeds (`feed.ts`)
+
+| Tool | Description |
+|------|-------------|
+| `get-feed` | Get the main chronological feed. |
+| `get-for-you-feed` | Get the personalized For You feed with recommended posts. |
+| `get-explore-feed` | Get the explore/trending feed with popular posts. |
+| `get-following-feed` | Get posts from users you follow. |
+| `get-user-feed` | Get posts from a specific user's profile by user ID. |
+| `get-replies` | Get replies to a specific post by parent post ID. |
+| `get-feed-item` | Get a single feed item with full hydration (user profiles, engagement status). |
+
+### Interactions (`interactions.ts`)
+
+| Tool | Description |
+|------|-------------|
+| `like-post` | Like a post. |
+| `unlike-post` | Remove your like from a post. |
+| `save-post` | Bookmark/save a post. |
+| `unsave-post` | Remove a post from your bookmarks. |
+| `repost` | Repost (share) someone else's post to your followers. |
+| `quote-post` | Quote a post with your own commentary text. |
+
+### Search (`search.ts`)
+
+| Tool | Description |
+|------|-------------|
+| `search` | Search posts with advanced operators: `from:username`, `since:YYYY-MM-DD`, `until:YYYY-MM-DD`, `has:media`, `has:links`, `min_likes:N`, `min_reposts:N`. |
+
+### Lists (`lists.ts`)
+
+| Tool | Description |
+|------|-------------|
+| `create-list` | Create a new user list with optional description, visibility, and initial members. |
+| `get-lists` | Get your lists or public lists. |
+| `update-list` | Update a list's title, description, visibility, or members. |
+| `delete-list` | Delete a list by ID. |
+| `get-list-timeline` | Get the timeline of posts from members of a list. |
+
+### Notifications (`notifications.ts`)
+
+| Tool | Description |
+|------|-------------|
+| `get-notifications` | Get your notifications with unread count and pagination. |
+| `mark-notifications-read` | Mark all notifications as read. |
+| `get-unread-count` | Get the number of unread notifications. |
+
+### Polls (`polls.ts`)
+
+| Tool | Description |
+|------|-------------|
+| `get-poll` | Get a poll by ID. |
+| `get-poll-results` | Get the results and vote counts for a poll. |
+| `vote-poll` | Vote in a poll by selecting an option index (zero-based). |
+
+### Hashtags (`hashtags.ts`)
+
+| Tool | Description |
+|------|-------------|
+| `get-trending-hashtags` | Get currently trending hashtags on Mention. |
+| `get-posts-by-hashtag` | Get posts tagged with a specific hashtag (without `#` prefix). |
+
+## Configuring MCP clients
+
+<Tabs>
+  <Tab title="Claude Desktop">
+    Add the following to your Claude Desktop configuration file.
+
+    **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`  
+    **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+
+    ```json
+    {
+      "mcpServers": {
+        "mention": {
+          "command": "bun",
+          "args": ["/path/to/packages/mcp/server.ts"],
+          "env": {
+            "MENTION_API_URL": "https://api.mention.earth"
+          }
+        }
+      }
+    }
+    ```
+
+    Replace `/path/to/packages/mcp/server.ts` with the absolute path to the file on your machine. Restart Claude Desktop after saving.
+  </Tab>
+  <Tab title="Cursor">
+    Open **Cursor Settings → MCP** and add a new server entry:
+
+    ```json
+    {
+      "mention": {
+        "command": "bun",
+        "args": ["/path/to/packages/mcp/server.ts"],
+        "env": {
+          "MENTION_API_URL": "https://api.mention.earth"
+        }
+      }
+    }
+    ```
+
+    Cursor will spawn the server automatically when a tool call is needed.
+  </Tab>
+  <Tab title="HTTP client">
+    Point any Streamable HTTP or SSE MCP client at the running server:
+
+    ```json
+    {
+      "mention": {
+        "url": "http://localhost:3100/mcp",
+        "headers": {
+          "Authorization": "Bearer <your-mention-api-token>"
+        }
+      }
+    }
+    ```
+
+    For SSE clients, use `http://localhost:3100/sse` as the endpoint URL.
+  </Tab>
+</Tabs>
+
+<Note>
+  The stdio server reads your Mention API token from the `Authorization: Bearer` header that the MCP client forwards with each tool call. For Claude Desktop and Cursor (stdio mode), you may need to set the token as an environment variable expected by the API client within `packages/mcp/lib/api-client.ts`.
+</Note>
+
+## Example tool calls
+
+```typescript
+// Create a post
+{
+  "tool": "create-post",
+  "arguments": {
+    "text": "Hello from Claude!",
+    "hashtags": ["ai", "mention"],
+    "visibility": "public"
+  }
+}
+
+// Search with operators
+{
+  "tool": "search",
+  "arguments": {
+    "query": "climate from:scienceguy since:2025-01-01 has:media",
+    "limit": 10
+  }
+}
+
+// Get trending hashtags
+{
+  "tool": "get-trending-hashtags",
+  "arguments": { "limit": 5 }
+}
+```
+
+## Development
+
+```bash
+# Watch mode — stdio
+bun --watch server.ts
+
+# Watch mode — HTTP
+bun --watch server-http.ts
+
+# Type check
+bun run typecheck
+```
+
+The server is defined in `packages/mcp/lib/create-server.ts`. To add a new tool, create a `registerXxxTools(server: McpServer)` function and call it from `createMcpServer()`.

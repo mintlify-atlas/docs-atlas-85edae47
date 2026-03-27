@@ -1,0 +1,277 @@
+---
+title: "Settings"
+description: "An overview of every settings screen in Mention, covering appearance, notifications, privacy, feed, language, accessibility, and more."
+---
+
+Mention's settings are accessible from the main sidebar or bottom navigation. Each settings screen is a dedicated route under `/settings/`.
+
+## Settings overview
+
+<CardGroup cols={2}>
+  <Card title="Appearance" icon="palette" href="/customization/settings#appearance">
+    Color mode, accent color, and profile header image.
+  </Card>
+  <Card title="Notifications" icon="bell" href="/customization/settings#notifications">
+    Push and email toggles, per-type notification controls.
+  </Card>
+  <Card title="Privacy" icon="lock" href="/customization/settings#privacy">
+    Profile visibility, block/mute, hidden words, engagement counts.
+  </Card>
+  <Card title="Feed" icon="newspaper" href="/customization/settings#feed">
+    Feed algorithm: diversity, recency, quality presets.
+  </Card>
+  <Card title="Language" icon="globe" href="/customization/localization">
+    App display language and auto-translate.
+  </Card>
+  <Card title="Accessibility" icon="eye" href="/customization/settings#accessibility">
+    Haptic feedback, alt text, and display preferences.
+  </Card>
+  <Card title="Profile customization" icon="user" href="/customization/settings#profile-customization">
+    Profile layout style and profile color.
+  </Card>
+  <Card title="Interests" icon="heart" href="/customization/settings#interests">
+    Topics and categories used to personalize your feed.
+  </Card>
+  <Card title="Thread preferences" icon="comments" href="/customization/settings#thread-preferences">
+    Reply sorting and thread display options.
+  </Card>
+  <Card title="Link management" icon="link" href="/customization/settings#link-management">
+    Clear cached link previews and force-refresh individual URLs.
+  </Card>
+</CardGroup>
+
+---
+
+## Appearance
+
+Route: `/settings/appearance`
+
+The appearance screen lets users control the visual style of the app.
+
+### Color mode
+
+Choose between three options using a segmented control:
+
+| Option | Behavior |
+|---|---|
+| **System** | Follows the device OS light/dark preference |
+| **Light** | Always use the light theme |
+| **Dark** | Always use the dark theme |
+
+The selection is saved to the user's account and synced to the backend, so the same preference applies after a fresh install when the user logs in.
+
+### Accent color
+
+Users pick a primary (accent) color from a preset color palette. The selected color is used throughout the app — buttons, links, active icons, and interactive states — wherever `theme.colors.primary` is applied.
+
+<Note>
+Premium users and the `oxy` account have access to additional accent color presets beyond the standard palette.
+</Note>
+
+### Profile header
+
+Users can upload a banner image displayed at the top of their public profile. Recommended dimensions are **1500×500 px**. The header can be replaced or removed at any time.
+
+<Tip>
+See [Theming](/customization/theming) for technical details on how the theme system is implemented and how components consume these settings.
+</Tip>
+
+---
+
+## Notifications
+
+Route: `/settings/notifications`
+
+The notifications screen is split into two groups.
+
+### General
+
+| Toggle | Default | Description |
+|---|---|---|
+| Push notifications | On | Receive native push notifications on the device |
+| Email notifications | Off | Receive email summaries of notifications |
+
+### Notification types
+
+Each notification type can be enabled or disabled independently:
+
+| Type | Default | Trigger |
+|---|---|---|
+| Likes | On | Someone likes your post |
+| Reposts | On | Someone reposts your post |
+| New followers | On | Someone follows you |
+| Mentions | On | Someone mentions you in a post |
+| Replies | On | Someone replies to your post |
+| Quote posts | On | Someone quotes your post |
+
+Changes are saved immediately — no separate save button is required. If a save fails, the toggle reverts to its previous value.
+
+---
+
+## Privacy
+
+Route: `/settings/privacy`
+
+### Profile visibility
+
+Control who can view your content:
+
+| Option | Description |
+|---|---|
+| **Public** | Anyone can see your posts and follow you |
+| **Followers only** | Only your followers can see your posts |
+| **Private** | Only approved followers can see your posts |
+
+### Tags and mentions
+
+| Toggle | Description |
+|---|---|
+| Allow tags | Let others tag you in posts |
+| Allow mentions | Let others mention you in posts |
+
+### Online status
+
+Toggle whether other users see when you are online.
+
+### Engagement counts
+
+Hide or show engagement numbers on posts:
+
+| Toggle | Description |
+|---|---|
+| Hide all counts | Hide all engagement counts and the save button on posts |
+| Hide like counts | Hide only the number of likes |
+| Hide share counts | Hide only the number of shares |
+| Hide reply counts | Hide only the number of replies |
+| Hide save button | Remove the save button from posts |
+
+### Recommendation filters
+
+Control what types of accounts appear in suggestions:
+
+| Toggle | Description |
+|---|---|
+| Fediverse accounts in suggestions | Show accounts from Mastodon and other fediverse instances |
+| AI agents in suggestions | Show AI-powered bot accounts |
+| Automated accounts in suggestions | Show automated posting accounts |
+
+### Blocked and restricted profiles
+
+Search for and manage users you have blocked or restricted. Restricted users can see your posts but cannot comment or see your online status.
+
+---
+
+## Feed
+
+Route: `/settings/feed`
+
+The feed settings screen exposes the ranking algorithm used to sort your home timeline. Settings are auto-saved.
+
+### Quick presets
+
+Apply a preset to configure all settings at once:
+
+| Preset | Description |
+|---|---|
+| **Most Recent** | Prioritize newest posts; diversity and quality boost disabled |
+| **Most Engaged** | Show posts with the highest engagement |
+| **Balanced** | Default mix of recency and engagement |
+| **Diverse** | Maximum variety from different authors and topics |
+
+### Diversity
+
+Controls how much the feed avoids showing consecutive content from the same author or topic.
+
+| Setting | Default | Range | Description |
+|---|---|---|---|
+| Enable diversity | On | — | Mix content from different authors and topics |
+| Same author penalty | 0.95 | 0.5–1.0 | Score multiplier per repeated author (lower = more penalty) |
+| Same topic penalty | 0.92 | 0.5–1.0 | Score multiplier per repeated topic |
+| Max consecutive same author | — | 1–10 | Maximum posts from one author in a row |
+
+### Recency
+
+Controls how quickly posts lose relevance over time.
+
+| Setting | Default | Range | Description |
+|---|---|---|---|
+| Half-life hours | 24 h | 6–72 h | Hours before a post loses 50% of its recency score |
+| Max age hours | 168 h | 24–336 h | Hours after which posts are excluded from the feed |
+
+### Quality
+
+| Setting | Default | Description |
+|---|---|---|
+| Boost high-quality content | On | Prioritize posts with high engagement rates relative to views |
+
+<Info>
+Feed personalization data accumulates over time. To start fresh, use **Settings → Link Management → Reset Feed Preferences**.
+</Info>
+
+---
+
+## Language
+
+Route: `/settings/language`
+
+See the [Localization](/customization/localization) page for full details on supported languages and how to switch them.
+
+The language screen also contains an **Auto-translate** toggle for Premium users, which automatically translates posts written in a different language.
+
+---
+
+## Accessibility
+
+Route: `/settings/accessibility`
+
+Accessibility settings include haptic feedback preferences and alt-text options for media. These settings are stored locally on the device.
+
+---
+
+## Profile customization
+
+Route: `/settings/profile-customization`
+
+Control how your profile appears to visitors:
+
+| Setting | Description |
+|---|---|
+| Profile style | Choose between **Default** (with cover photo) or **Minimalist** (without cover photo) |
+| Profile color | A color applied across the app and shown to visitors on your profile page |
+
+<Note>
+Profile color is visible to all visitors, not just yourself. It is separate from your personal accent color set in Appearance.
+</Note>
+
+---
+
+## Interests
+
+Route: `/settings/interests`
+
+Select topics and categories that reflect what you want to see in your feed. Interests are used by the feed algorithm alongside engagement signals.
+
+---
+
+## Thread preferences
+
+Route: `/settings/thread-preferences`
+
+Configure how threads are displayed and how replies are sorted within a post's detail view.
+
+---
+
+## Link management
+
+Route: `/settings/links`
+
+Manage cached link previews:
+
+| Action | Description |
+|---|---|
+| Clear all link cache | Remove all cached link metadata and images. Links will be fetched fresh on next view. |
+| Refresh a specific link | Force-fetch updated metadata and preview image for a single URL. |
+
+<Warning>
+Clearing the link cache is permanent. All cached link previews and images will be removed immediately.
+</Warning>

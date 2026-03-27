@@ -1,0 +1,161 @@
+---
+title: "Authentication"
+description: "How to authenticate with the Mention API using JWT Bearer tokens."
+---
+
+Mention uses **JWT Bearer tokens** for authentication. Tokens are issued by the Oxy identity service (`@oxyhq/services`) and validated on every protected request.
+
+## How to authenticate
+
+Include the `Authorization` header with every request that requires authentication:
+
+```
+Authorization: Bearer <accessToken>
+```
+
+## Sign up
+
+Create a new Mention account.
+
+```
+POST /auth/signup
+```
+
+### Request body
+
+<ParamField body="username" type="string" required>
+  Unique username for the account. Must be URL-safe.
+</ParamField>
+
+<ParamField body="email" type="string" required>
+  Email address. Used for login and notifications.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Password for the account. Stored hashed server-side.
+</ParamField>
+
+<Tabs>
+  <Tab title="Request">
+    ```bash
+    curl -X POST https://api.mention.earth/auth/signup \
+      -H "Content-Type: application/json" \
+      -d '{
+        "username": "john_doe",
+        "email": "john@example.com",
+        "password": "s3cur3P@ss"
+      }'
+    ```
+  </Tab>
+  <Tab title="Response">
+    ```json
+    {
+      "user": {
+        "id": "64a1b2c3d4e5f6a7b8c9d0e1",
+        "username": "john_doe",
+        "email": "john@example.com",
+        "createdAt": "2024-01-15T12:00:00.000Z"
+      },
+      "accessToken": "eyJhbGciOiJIUzI1NiIs..."
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Response fields
+
+<ResponseField name="user" type="object">
+  The newly created user object.
+  <Expandable title="properties">
+    <ResponseField name="id" type="string">
+      Unique identifier for the user.
+    </ResponseField>
+    <ResponseField name="username" type="string">
+      The chosen username.
+    </ResponseField>
+    <ResponseField name="email" type="string">
+      The registered email address.
+    </ResponseField>
+    <ResponseField name="createdAt" type="string">
+      ISO 8601 timestamp of account creation.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="accessToken" type="string">
+  JWT token to use in the `Authorization: Bearer` header for subsequent requests.
+</ResponseField>
+
+---
+
+## Log in
+
+Authenticate an existing account and receive access and refresh tokens.
+
+```
+POST /auth/login
+```
+
+### Request body
+
+<ParamField body="email" type="string" required>
+  Registered email address.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Account password.
+</ParamField>
+
+<Tabs>
+  <Tab title="Request">
+    ```bash
+    curl -X POST https://api.mention.earth/auth/login \
+      -H "Content-Type: application/json" \
+      -d '{
+        "email": "john@example.com",
+        "password": "s3cur3P@ss"
+      }'
+    ```
+  </Tab>
+  <Tab title="Response">
+    ```json
+    {
+      "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+      "refreshToken": "eyJhbGciOiJIUzI1NiIs..."
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Response fields
+
+<ResponseField name="accessToken" type="string">
+  Short-lived JWT to include in `Authorization: Bearer` headers.
+</ResponseField>
+
+<ResponseField name="refreshToken" type="string">
+  Long-lived token used to obtain a new `accessToken` without re-entering credentials.
+</ResponseField>
+
+## Token refresh
+
+When an `accessToken` expires, use the `refreshToken` to obtain a new one. Send the `refreshToken` to the Oxy token refresh endpoint. The exact endpoint is managed by the `@oxyhq/services` identity layer.
+
+<Info>
+  Authentication is delegated to the Oxy identity service. The Mention backend validates tokens via the Oxy API on every request — no local JWT secret is required on the client side.
+</Info>
+
+## Authenticated vs unauthenticated endpoints
+
+| Access level | Description |
+|---|---|
+| **Public** | No token required. Examples: `GET /feed`, `GET /trending`, `GET /hashtags`, all ActivityPub routes. |
+| **Optional auth** | Token accepted but not required. Authenticated users receive personalised data (e.g. `isLiked`, `isFollowing`). |
+| **Protected** | Token required. Missing or invalid tokens return `401 Unauthorized`. |
+
+## Common errors
+
+| Status | Cause |
+|--------|-------|
+| `401 Unauthorized` | No token provided, or the token is expired or malformed. |
+| `403 Forbidden` | Valid token, but the user does not have permission for this resource (e.g. deleting another user's post). |

@@ -1,0 +1,154 @@
+---
+title: Architecture
+description: An overview of the Mention monorepo structure, its packages, and how the frontend, backend, and supporting services fit together.
+---
+
+Mention is organized as an **npm workspaces monorepo** (`packages/*`). All packages live under the `packages/` directory and are managed together with a single root `bun install`.
+
+## Monorepo Packages
+
+<CardGroup cols={2}>
+  <Card title="@mention/frontend" icon="mobile" href="/features/posts-and-feeds">
+    The Expo React Native application. Runs on iOS, Android, and web from a single codebase using `expo-router` for file-based routing and NativeWind for styling.
+  </Card>
+  <Card title="@mention/backend" icon="server" href="/api/overview">
+    The Express.js v5 REST API and Socket.IO server. Handles authentication, posts, feeds, notifications, federation, and real-time events. Persists data in MongoDB via Mongoose.
+  </Card>
+  <Card title="@mention/shared-types" icon="code" href="/api/overview">
+    TypeScript type definitions shared between the frontend and backend. Built to `dist/` and consumed as a local workspace dependency (`file:../shared-types`).
+  </Card>
+  <Card title="@mention/mcp" icon="robot" href="/integrations/mcp-server">
+    A Model Context Protocol (MCP) server that exposes Mention data and actions to AI agents. Supports both stdio and HTTP transports.
+  </Card>
+  <Card title="@mention/agora" icon="microphone" href="/features/rooms-and-spaces">
+    A standalone Expo app for live audio/video Spaces, built on top of LiveKit (`@livekit/react-native`) and sharing utilities with `agora-shared`.
+  </Card>
+  <Card title="@mention/agora-shared" icon="share" href="/features/rooms-and-spaces">
+    Shared utilities and helpers used by the `agora` package.
+  </Card>
+</CardGroup>
+
+## Project Structure
+
+```
+/
+├── packages/            # All code packages
+│   ├── frontend/        # Expo React Native app
+│   │   ├── app/         # App entry, screens, and routing
+│   │   │   ├── [username]/  # User profile, followers, following
+│   │   │   ├── ai/          # AI assistant (Alia chat)
+│   │   │   ├── p/[id]/      # Post details, replies, quotes
+│   │   │   └── ...
+│   │   ├── components/  # UI components
+│   │   ├── assets/      # Images, icons, fonts
+│   │   ├── constants/   # App-wide constants
+│   │   ├── context/     # React context providers
+│   │   ├── features/    # Feature modules
+│   │   ├── hooks/       # Custom React hooks
+│   │   ├── interfaces/  # TypeScript interfaces
+│   │   ├── lib/         # Library code
+│   │   ├── locales/     # i18n translation files
+│   │   ├── scripts/     # Utility scripts
+│   │   ├── store/       # State management
+│   │   ├── styles/      # Global styles and colors
+│   │   └── utils/       # Utility functions
+│   ├── backend/         # Node.js/Express API server
+│   │   ├── src/         # Backend source code
+│   │   │   ├── controllers/ # API controllers
+│   │   │   ├── middleware/  # Express middleware
+│   │   │   ├── models/      # MongoDB models
+│   │   │   ├── routes/      # API routes
+│   │   │   ├── scripts/     # Utility scripts
+│   │   │   ├── sockets/     # WebSocket handlers
+│   │   │   ├── types/       # TypeScript types
+│   │   │   └── utils/       # Utility functions
+│   │   └── ...
+│   ├── agora/           # Agora audio/video spaces app (Expo)
+│   ├── agora-shared/    # Shared utilities for Agora
+│   └── shared-types/    # Shared TypeScript types
+│       ├── src/         # Type definitions
+│       └── dist/        # Compiled types
+├── package.json         # Root package.json with workspaces
+├── tsconfig.json        # Root TypeScript config
+└── ...
+```
+
+## Frontend (`@mention/frontend`)
+
+The frontend is a full Expo SDK 55 application targeting iOS, Android, and web.
+
+| Concern | Library |
+|---|---|
+| Routing | `expo-router` (file-based, similar to Next.js App Router) |
+| Styling | NativeWind 5 (TailwindCSS v4 for React Native) |
+| State | Zustand v5 |
+| Server state & caching | TanStack React Query v5 |
+| Real-time | `socket.io-client` v4 |
+| Audio/Video | `@livekit/react-native` + LiveKit client |
+| AI | `@alia.onl/sdk` v3 |
+| i18n | `i18next` + `react-i18next` |
+| Icons | `@expo/vector-icons`, `lucide-react-native` |
+
+Screens are defined under `packages/frontend/app/` using expo-router's file-based conventions. Dynamic routes such as `[username]/` handle user profiles and `p/[id]/` handles individual post threads.
+
+## Backend (`@mention/backend`)
+
+The backend is a Node.js service written in TypeScript and run with Bun.
+
+| Concern | Library |
+|---|---|
+| HTTP framework | Express.js v5 |
+| Database | MongoDB 7 via Mongoose v9 |
+| Real-time | Socket.IO v4 (with optional Redis adapter) |
+| Auth | `@oxyhq/services` (JWT via `jsonwebtoken`) |
+| AI | Vercel AI SDK (`ai`, `@ai-sdk/openai`) |
+| Push notifications | Firebase Admin SDK (FCM) |
+| Object storage | AWS S3 SDK v3 |
+| Validation | `express-validator`, `zod` v4 |
+| Rate limiting | `express-rate-limit` + Redis |
+| Logging | `pino` + `pino-pretty` |
+
+### Source layout
+
+```
+packages/backend/src/
+├── controllers/   # Route handler logic
+├── middleware/    # Auth, rate-limit, error-handling middleware
+├── models/        # Mongoose models (User, Post, Follow, etc.)
+├── routes/        # Express routers
+├── sockets/       # Socket.IO event handlers
+├── types/         # TypeScript types (local, supplements shared-types)
+└── utils/         # Helpers: federation, crypto, URL builders
+```
+
+## Shared Types (`@mention/shared-types`)
+
+`@mention/shared-types` is a pure-TypeScript package compiled to CommonJS. It is declared as a local workspace dependency in both `@mention/frontend` and `@mention/backend` using the `file:../shared-types` path. The `postinstall` hook in the root `package.json` ensures it is always built before other packages are used.
+
+## MCP Server (`@mention/mcp`)
+
+The `@mention/mcp` package implements a [Model Context Protocol](https://modelcontextprotocol.io) server using `@modelcontextprotocol/sdk`. It exposes Mention's data and actions to AI agents through two entry points:
+
+- `server.ts` — stdio transport (for use with Claude Desktop and similar tools)
+- `server-http.ts` — HTTP transport (for web-based AI integrations)
+
+See [MCP Server](/integrations/mcp-server) for configuration details.
+
+## Agora / Spaces (`@mention/agora`)
+
+The `agora` package is a standalone Expo application dedicated to live audio/video Spaces. It uses the LiveKit server SDK (`livekit-server-sdk` on the backend, `@livekit/react-native` on the client) and shares common utilities through `@mention/agora-shared`.
+
+## Deployment Overview
+
+<CardGroup cols={2}>
+  <Card title="Cloudflare Pages" icon="cloud" href="/deployment/cloudflare">
+    The frontend is exported as a static web build (`expo export --platform web`) and served from Cloudflare Pages for global edge distribution.
+  </Card>
+  <Card title="DigitalOcean App Platform" icon="server" href="/deployment/digitalocean">
+    The backend runs on DigitalOcean App Platform. Path-based ingress rules route `/.well-known/` and `/ap/` to the backend for ActivityPub federation, while all other traffic serves the static frontend.
+  </Card>
+</CardGroup>
+
+<Info>
+  The `docker-compose.yml` at the repo root starts MongoDB 7, Redis 7, and the backend container together for a self-contained local environment.
+</Info>

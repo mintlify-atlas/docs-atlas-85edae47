@@ -1,0 +1,198 @@
+---
+title: "Notifications"
+description: "Real-time in-app and push notifications for likes, replies, mentions, follows, reposts, and more."
+---
+
+Mention delivers notifications in real time via Socket.IO and as push notifications via Firebase Cloud Messaging (FCM). All notifications are persisted in MongoDB so they remain accessible when the app is offline.
+
+## Notification types
+
+The `Notification` model (`packages/backend/src/models/Notification.ts`) supports the following types:
+
+| Type | Trigger |
+|------|---------|
+| `mention` | Another user mentions you in a post or reply |
+| `like` | Someone likes one of your posts |
+| `reply` | Someone replies to your post |
+| `repost` | Someone reposts your post |
+| `quote` | Someone quote-posts your post |
+| `follow` | Someone follows your account |
+| `post` | A post-level event (e.g., a post you're associated with is updated) |
+| `poke` | A direct poke action from another user |
+| `welcome` | System notification sent on account creation |
+
+Entity types associated with a notification can be `post`, `reply`, or `profile`.
+
+```typescript
+interface INotification {
+  recipientId: string;             // Who receives the notification
+  actorId: string;                 // Who triggered it (or 'system')
+  type: 'like' | 'reply' | 'mention' | 'follow' | 'repost' | 'quote' | 'welcome' | 'post' | 'poke';
+  entityId: mongoose.Types.ObjectId; // The related post / profile ID
+  entityType: 'post' | 'reply' | 'profile';
+  read: boolean;
+  createdAt: Date;
+}
+```
+
+## Real-time delivery via Socket.IO
+
+Notifications are emitted on the `/notifications` Socket.IO namespace immediately after being saved to MongoDB:
+
+```typescript
+// Backend — notifications.ts
+notificationsNamespace
+  .to(`user:${notification.recipientId}`)
+  .emit('notification', payload);
+```
+
+The payload includes the notification document plus enriched fields:
+- `actorId_populated` — resolved actor profile (username, name, avatar)
+- `preview` — truncated post text (up to 200 characters) for `post`-type notifications
+- `post` — a full embedded post object for display in the notification UI
+
+The frontend listens for the `notification` event and updates the badge count and notification list without requiring a page reload.
+
+Additional Socket.IO events emitted on the `/notifications` namespace:
+
+| Event | When |
+|-------|------|
+| `notificationUpdated` | A notification is marked as read |
+| `allNotificationsRead` | All notifications are marked as read |
+| `notificationArchived` | A notification is archived |
+| `notificationDeleted` | A notification is deleted |
+
+## Mention notifications
+
+Mention notifications are created by `createMentionNotifications()` in `packages/backend/src/utils/notificationUtils.ts`:
+
+```typescript
+export const createMentionNotifications = async (
+  mentionUserIds: string[],
+  postId: string,
+  actorId: string,
+  entityType: 'post' | 'reply' = 'post',
+  emitEvent: boolean = true
+): Promise<void> => {
+  const uniqueUserIds = [...new Set(mentionUserIds)];
+
+  for (const recipientId of uniqueUserIds) {
+    if (recipientId === actorId) continue; // Skip self-mentions
+    await createNotification({ recipientId, actorId, type: 'mention', entityId: postId, entityType }, emitEvent);
+  }
+};
+```
+
+Key safeguards:
+- **Duplicate prevention** — `[...new Set(mentionUserIds)]` ensures one notification per unique user.
+- **Self-mention skip** — no notification is created when a user mentions themselves.
+- **Post vs. reply context** — `entityType` distinguishes between post and reply mentions, which maps to different translation strings (`notification.mention` vs. `notification.mention_reply`).
+
+See [Mentions and hashtags](/features/mentions-and-hashtags) for how mentions are composed and stored.
+
+## Push notifications via FCM
+
+Push notifications are delivered using Firebase Cloud Messaging. Device tokens are registered via:
+
+```
+POST /api/notifications/push-token
+```
+
+```typescript
+{
+  token: string;       // FCM device token
+  platform?: string;   // 'ios' | 'android' | 'web'
+  type?: string;       // 'fcm' (default)
+  deviceId?: string;
+  locale?: string;
+}
+```
+
+Tokens are stored in the `PushToken` model and used by `sendPushToUser()` to deliver notifications to all registered devices for a user.
+
+To unregister a device:
+```
+DELETE /api/notifications/push-token
+```
+
+For setup and configuration details, see [Push notifications](/integrations/push-notifications).
+
+## Notification feed API
+
+Notifications are fetched with cursor-based pagination for performance at scale:
+
+```
+GET /api/notifications?limit=20&cursor=<lastId>
+```
+
+Response:
+```typescript
+{
+  notifications: Notification[]; // Enriched with actor profiles and post previews
+  unreadCount: number;
+  hasMore: boolean;
+  nextCursor?: string;
+  limit: number;
+}
+```
+
+Marketing a single notification as read:
+```
+PATCH /api/notifications/:id/read
+```
+
+Marking all notifications as read:
+```
+PATCH /api/notifications/read-all
+```
+
+Fetching the unread count:
+```
+GET /api/notifications/unread-count
+```
+
+## Notification data flow
+
+The full lifecycle of a mention notification:
+
+```
+1. User creates post with mentions array
+       ↓
+2. POST /api/posts — post saved to MongoDB
+       ↓
+3. createMentionNotifications() called with mentions array
+       ↓
+4. Notification document saved to MongoDB
+       ↓
+5. Socket.IO emits to user:<recipientId> on /notifications namespace
+6. FCM push sent to all registered devices for recipient
+       ↓
+7. Frontend: badge count increments, notification appears in feed
+       ↓
+8. User taps notification → navigates to the post
+```
+
+<Info>
+  Notifications use a compound unique index `{ recipientId, actorId, type, entityId }` to prevent duplicate records at the database level.
+</Info>
+
+## Settings
+
+Notification preferences can be configured in the app settings. See [Settings](/customization/settings) for available options.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Push notifications" icon="bell" href="/integrations/push-notifications">
+    Configure FCM push delivery for mobile and web.
+  </Card>
+  <Card title="Mentions and hashtags" icon="at" href="/features/mentions-and-hashtags">
+    How @mentions trigger notifications.
+  </Card>
+  <Card title="Notifications API" icon="code" href="/api/notifications">
+    Full REST API reference.
+  </Card>
+  <Card title="Settings" icon="gear" href="/customization/settings">
+    User-level notification preferences.
+  </Card>
+</CardGroup>

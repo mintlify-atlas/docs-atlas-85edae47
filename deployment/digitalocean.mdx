@@ -1,0 +1,105 @@
+---
+title: "Deploy to DigitalOcean"
+description: "Deploy the Mention backend to DigitalOcean App Platform."
+---
+
+The Mention backend (`mention`) is deployed as a single service on the DigitalOcean App Platform under the app `mention-production`.
+
+## Build and Run
+
+**Build command:**
+
+```bash
+npm ci --include=dev && npm run -w @mention/backend build && npm prune --omit=dev
+```
+
+**Run command:**
+
+```bash
+node packages/backend/dist/server.js
+```
+
+**Instance size:** `apps-s-1vcpu-1gb-fixed`
+
+<Info>
+The build installs all dependencies (including dev dependencies needed for TypeScript compilation), compiles the backend, then prunes dev dependencies before the run stage.
+</Info>
+
+## Environment Variables
+
+### App-Level Variables
+
+These variables are set at the app level and are available to all service components at both build and run time.
+
+| Variable | Value | Scope |
+|---|---|---|
+| `API_URL` | `https://api.mention.earth` | `RUN_AND_BUILD_TIME` |
+| `API_URL_OXY` | `https://api.oxy.so` | `RUN_AND_BUILD_TIME` |
+| `EXPO_PUBLIC_API_URL` | `https://api.mention.earth` | `RUN_AND_BUILD_TIME` |
+| `NODE_ENV` | `production` | `RUN_AND_BUILD_TIME` |
+
+For the full list of backend-specific variables (MongoDB URI, federation settings, Firebase, etc.), see the [Environment Variables reference](/deployment/environment-variables).
+
+## Automated Deployments
+
+Deployments are triggered by two mechanisms that operate independently:
+
+### 1. DigitalOcean Deploy-on-Push
+
+DO App Platform is configured to watch the `main` branch and automatically starts a new build whenever code is pushed.
+
+### 2. GitHub Actions Workflow
+
+The `.github/workflows/deploy-backend.yml` workflow triggers on push to `main` when any of the following paths change:
+
+- `packages/backend/**`
+- `packages/shared-types/**`
+- `package.json`
+- `package-lock.json`
+
+It can also be triggered manually from the **Actions** tab via `workflow_dispatch`.
+
+The workflow calls the DO API to force a new build and then polls for up to 10 minutes waiting for the deployment phase to reach `ACTIVE`.
+
+### Required GitHub Secrets and Variables
+
+| Name | Type | Description |
+|---|---|---|
+| `DIGITALOCEAN_TOKEN` | Secret | DigitalOcean API token with read/write access |
+| `DO_APP_ID` | Variable | App Platform app ID (from `doctl apps list`) |
+
+## Manual Deployment
+
+To trigger a deployment manually without GitHub Actions:
+
+```bash
+curl -X POST "https://api.digitalocean.com/v2/apps/{app-id}/deployments" \
+  -H "Authorization: Bearer $DIGITALOCEAN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"force_build": true}'
+```
+
+Replace `{app-id}` with the value from `doctl apps list`.
+
+## Database
+
+The backend connects to a **managed MongoDB cluster** (`db-oxy`) on DigitalOcean. The database name is `mention-production`, derived from the app name and `NODE_ENV` and passed via the `dbName` option in `mongoose.connect()`.
+
+The connection string is provided through the `MONGODB_URI` environment variable configured on the `mention` service component in the App Platform console.
+
+## Troubleshooting
+
+### View Build Logs
+
+Retrieve build logs for a specific deployment via the DO API:
+
+```bash
+curl "https://api.digitalocean.com/v2/apps/{app-id}/deployments/{deploy-id}/components/{component-name}/logs?type=BUILD" \
+  -H "Authorization: Bearer $DIGITALOCEAN_TOKEN"
+```
+
+### Multiple Lock Files
+
+<Warning>
+The DO buildpack rejects builds if multiple package manager lock files exist (e.g., both `bun.lock` and `package-lock.json`). The `.gitignore` excludes `bun.lock` to prevent this. Do not commit `bun.lock` to the repository.
+</Warning>

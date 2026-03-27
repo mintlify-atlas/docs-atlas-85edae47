@@ -1,0 +1,155 @@
+---
+title: "Users"
+description: "Retrieve user profiles and manage follow relationships on Mention."
+---
+
+User identity and authentication is managed by the Oxy identity service. The Mention API surfaces profile data and social graph operations.
+
+## User profile object
+
+<ResponseField name="id" type="string">
+  Unique user identifier from the Oxy identity system.
+</ResponseField>
+
+<ResponseField name="username" type="string">
+  Unique, URL-safe username.
+</ResponseField>
+
+<ResponseField name="bio" type="string">
+  Short biography text.
+</ResponseField>
+
+<ResponseField name="followersCount" type="number">
+  Total number of followers.
+</ResponseField>
+
+<ResponseField name="followingCount" type="number">
+  Total number of accounts the user follows.
+</ResponseField>
+
+<ResponseField name="postsCount" type="number">
+  Total number of published posts.
+</ResponseField>
+
+<ResponseField name="isFollowing" type="boolean">
+  Whether the authenticated viewer is following this user. Only present when the request is authenticated.
+</ResponseField>
+
+<ResponseField name="avatar" type="string">
+  URL of the user's profile picture.
+</ResponseField>
+
+---
+
+## Get user profile
+
+Retrieve a user's public profile by username. Authentication is required — the `isFollowing` field is computed relative to the authenticated user.
+
+```
+GET /users/:username
+```
+
+<ParamField path="username" type="string" required>
+  The username to look up (without the `@` prefix).
+</ParamField>
+
+<Tabs>
+  <Tab title="Request">
+    ```bash
+    curl https://api.mention.earth/users/john_doe \
+      -H "Authorization: Bearer <token>"
+    ```
+  </Tab>
+  <Tab title="Response">
+    ```json
+    {
+      "id": "user_abc123",
+      "username": "john_doe",
+      "bio": "Hello, I'm John!",
+      "followersCount": 1000,
+      "followingCount": 500,
+      "postsCount": 100,
+      "isFollowing": true,
+      "avatar": "https://cdn.mention.earth/avatars/john_doe.jpg"
+    }
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Follow events (real-time)
+
+Follow and unfollow actions are handled by the Oxy identity service. After a successful follow or unfollow, the Mention backend provides two endpoints to broadcast real-time Socket.IO events to connected clients.
+
+### Emit follow event
+
+```
+POST /follows/emit-follow
+```
+
+Call this after a follow action completes in the Oxy service. Broadcasts a `user:followed` event to the follower's and the followed user's Socket.IO rooms.
+
+<ParamField body="followingId" type="string" required>
+  ID of the user who was followed.
+</ParamField>
+
+<ParamField body="followerCount" type="number">
+  Updated follower count to broadcast.
+</ParamField>
+
+<ParamField body="followingCount" type="number">
+  Updated following count to broadcast.
+</ParamField>
+
+```bash
+curl -X POST https://api.mention.earth/follows/emit-follow \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "followingId": "user_xyz789",
+    "followerCount": 1001,
+    "followingCount": 501
+  }'
+```
+
+### Emit unfollow event
+
+```
+POST /follows/emit-unfollow
+```
+
+Broadcasts a `user:unfollowed` event. Request body is identical to `emit-follow`.
+
+```bash
+curl -X POST https://api.mention.earth/follows/emit-unfollow \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "followingId": "user_xyz789",
+    "followerCount": 999,
+    "followingCount": 499
+  }'
+```
+
+<Note>
+  These endpoints only emit real-time Socket.IO events. The actual follow relationship is created and stored by the Oxy identity service, not by the Mention backend.
+</Note>
+
+---
+
+## Real-time presence
+
+Mention tracks online status via Socket.IO. Clients connect to the main `/` namespace and use the following events:
+
+| Event (emit) | Payload | Description |
+|---|---|---|
+| `subscribePresence` | `userId: string` | Subscribe to a user's online/offline updates. |
+| `unsubscribePresence` | `userId: string` | Unsubscribe from presence updates. |
+| `getPresence` | `userId: string` | Request the current online status of one user. |
+| `getPresenceBulk` | `userIds: string[]` | Request status for up to 100 users at once. |
+
+| Event (listen) | Payload | Description |
+|---|---|---|
+| `user:presence` | `{ userId, online, timestamp }` | Online/offline status changed. |
+| `user:presenceBulk` | `Record<string, boolean>` | Bulk presence response. |

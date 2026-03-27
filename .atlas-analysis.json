@@ -1,24 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "Mention",
+  "projectType": "saas",
+  "projectName": "Mention",
+  "projectDescription": "A modern, cross-platform social network app for Web, Android, and iOS built with Expo, React Native, and a Node.js/Express backend in a monorepo.",
   "theme": "almond",
-  "colors": {
-    "primary": "#5eb5d9",
-    "light": "#d9e8ee",
-    "dark": "#181e21"
-  },
-  "favicon": "https://media.brand.dev/b27f2fe9-d831-4d1b-a292-b007b5d370f9.jpg",
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/OxyHQ/Mention"
-    }
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/OxyHQ/Mention"
-    }
-  },
+  "primaryColor": "#5eb5d9",
+  "lightColor": "#d9e8ee",
+  "darkColor": "#181e21",
   "navigation": {
     "tabs": [
       {
@@ -93,5 +80,38 @@
         ]
       }
     ]
-  }
+  },
+  "keyFeatures": [
+    "Cross-platform (Web, iOS, Android) via Expo React Native",
+    "Real-time feeds with Socket.IO",
+    "User mentions with @username autocomplete",
+    "Hashtag trending system",
+    "ActivityPub / Fediverse federation",
+    "AI assistant (Alia) integration",
+    "Live audio/video rooms via LiveKit (Agora)",
+    "Push notifications via Firebase FCM",
+    "Dark/light theme with user customization",
+    "MCP (Model Context Protocol) server for AI agent access",
+    "Multi-language (i18n) support",
+    "Monorepo with shared TypeScript types"
+  ],
+  "publicApiSurface": [
+    "POST /auth/signup",
+    "POST /auth/login",
+    "GET /posts/explore",
+    "POST /posts",
+    "GET /users/:username",
+    "GET /feed",
+    "GET /notifications",
+    "GET /search",
+    "GET /.well-known/webfinger",
+    "GET /ap/users/:username",
+    "POST /ap/users/:username/inbox",
+    "GET /federation/search",
+    "POST /federation/follow",
+    "GET /trending",
+    "GET /hashtags/:tag",
+    "POST /api/notifications/push-token",
+    "GET /health"
+  ]
 }

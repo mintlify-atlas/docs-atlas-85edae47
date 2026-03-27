@@ -1,0 +1,99 @@
+---
+title: "Deploy to Cloudflare Pages"
+description: "Deploy the Mention and Agora frontends to Cloudflare Pages."
+---
+
+Both web frontends are deployed to Cloudflare Pages via the `.github/workflows/deploy-frontends.yml` GitHub Actions workflow. Deployments trigger automatically on push to `main`.
+
+## Projects
+
+| Cloudflare Project | Source Package | Domain |
+|---|---|---|
+| `mention-frontend` | `packages/frontend` | `mention.earth` |
+| `agora-frontend` | `packages/agora` | `agora.mention.earth` |
+
+## Build Process
+
+Each frontend job follows the same sequence:
+
+<Steps>
+  <Step title="Install dependencies">
+    ```bash
+    bun install
+    ```
+  </Step>
+  <Step title="Build shared types">
+    Builds `@mention/shared-types` first, since both frontends depend on it:
+    ```bash
+    bun run --cwd packages/shared-types build
+    ```
+  </Step>
+  <Step title="Build the frontend">
+    Builds the frontend package with an increased Node.js heap size to handle large Expo web builds:
+    ```bash
+    # mention-frontend
+    bun run --cwd packages/frontend build
+
+    # agora-frontend
+    bun run --cwd packages/agora build
+    ```
+    The `NODE_OPTIONS=--max-old-space-size=4096` environment variable is set automatically by the build runner.
+  </Step>
+  <Step title="Deploy to Cloudflare Pages">
+    Deploys the compiled `dist/` directory using Wrangler:
+    ```bash
+    # mention-frontend
+    wrangler pages deploy packages/frontend/dist --project-name=mention-frontend --branch=main
+
+    # agora-frontend
+    wrangler pages deploy packages/agora/dist --project-name=agora-frontend --branch=main
+    ```
+  </Step>
+</Steps>
+
+## Change Detection
+
+The workflow uses `dorny/paths-filter@v3` to avoid rebuilding a frontend when only unrelated files changed. Each job only runs if its relevant paths were modified:
+
+| Frontend | Rebuilt when these paths change |
+|---|---|
+| `mention-frontend` | `packages/frontend/**`, `packages/shared-types/**`, `package.json`, `bun.lock` |
+| `agora-frontend` | `packages/agora/**`, `packages/agora-shared/**`, `packages/shared-types/**`, `package.json`, `bun.lock` |
+
+Both jobs run **in parallel** when both frontends have changes. Neither runs if only backend code changed.
+
+<Tip>
+You can bypass change detection and force both frontends to deploy by triggering the workflow manually via `workflow_dispatch` from the GitHub Actions tab.
+</Tip>
+
+## SPA Routing
+
+Both frontends ship a `public/_redirects` file that Cloudflare Pages uses to serve the SPA for all routes:
+
+```
+/* /index.html 200
+```
+
+This ensures client-side routing works correctly when users navigate directly to a deep link.
+
+## ActivityPub Redirect Rules
+
+ActivityPub and WebFinger paths on `mention.earth` must be forwarded to `api.mention.earth` so that federation identities (`@user@mention.earth`) resolve correctly. These are configured as **Cloudflare zone-level Redirect Rules** (phase `http_request_dynamic_redirect`) on the `mention.earth` zone:
+
+| From | To | Type |
+|---|---|---|
+| `mention.earth/.well-known/*` | `api.mention.earth/.well-known/*` | 301 (preserve query string) |
+| `mention.earth/ap/*` | `api.mention.earth/ap/*` | 301 (preserve query string) |
+
+<Note>
+These redirect rules are configured in the Cloudflare dashboard, not in the Pages project. They apply at the zone level and take priority over the Pages catch-all `_redirects` rule.
+</Note>
+
+## Required GitHub Secrets
+
+| Secret | Description |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API token with Pages write access |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
+
+These are consumed by the `cloudflare/wrangler-action@v3` step in both deploy jobs.

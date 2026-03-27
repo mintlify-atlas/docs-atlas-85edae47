@@ -1,0 +1,420 @@
+---
+title: "Federation API"
+description: "ActivityPub protocol endpoints and Mention federation API for fediverse interoperability."
+---
+
+Mention supports [ActivityPub](https://www.w3.org/TR/activitypub/) federation, allowing users to interact with Mastodon, Misskey, and other fediverse platforms. Each Mention user gets a fediverse identity at `@username@mention.earth`.
+
+<Info>
+  Federation can be disabled by setting `FEDERATION_ENABLED=false` in the environment. All endpoints in this document return `404` when federation is disabled.
+</Info>
+
+---
+
+## ActivityPub protocol endpoints
+
+These endpoints implement the ActivityPub specification and are **public** (no authentication required). They are intended to be called by remote ActivityPub servers, not by end-user clients.
+
+Activity is rate-limited to **30 requests per minute per IP** to prevent abuse.
+
+### WebFinger
+
+Resolves an `acct:` URI to an ActivityPub actor URL. Required for fediverse discovery.
+
+```
+GET /.well-known/webfinger?resource=acct:username@mention.earth
+```
+
+<ParamField query="resource" type="string" required>
+  An `acct:` URI in the form `acct:username@mention.earth`.
+</ParamField>
+
+```bash
+curl "https://mention.earth/.well-known/webfinger?resource=acct:john_doe@mention.earth"
+```
+
+```json
+{
+  "subject": "acct:john_doe@mention.earth",
+  "links": [
+    {
+      "rel": "self",
+      "type": "application/activity+json",
+      "href": "https://mention.earth/ap/users/john_doe"
+    }
+  ]
+}
+```
+
+<Note>
+  WebFinger responses are cached in Redis for 1 hour (`Cache-Control: max-age=3600`).
+</Note>
+
+---
+
+### Actor profile
+
+Returns an ActivityPub `Person` object for a Mention user.
+
+```
+GET /ap/users/:username
+```
+
+<ParamField path="username" type="string" required>
+  Mention username.
+</ParamField>
+
+Requests without an `Accept: application/activity+json` header are redirected to the frontend profile page (`https://mention.earth/@username`).
+
+```bash
+curl https://mention.earth/ap/users/john_doe \
+  -H "Accept: application/activity+json"
+```
+
+```json
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://mention.earth/ap/users/john_doe",
+  "type": "Person",
+  "preferredUsername": "john_doe",
+  "name": "John Doe",
+  "summary": "Hello, I'm John!",
+  "url": "https://mention.earth/@john_doe",
+  "inbox": "https://mention.earth/ap/users/john_doe/inbox",
+  "outbox": "https://mention.earth/ap/users/john_doe/outbox",
+  "followers": "https://mention.earth/ap/users/john_doe/followers",
+  "following": "https://mention.earth/ap/users/john_doe/following",
+  "endpoints": { "sharedInbox": "https://mention.earth/ap/inbox" },
+  "publicKey": {
+    "id": "https://mention.earth/ap/users/john_doe#main-key",
+    "owner": "https://mention.earth/ap/users/john_doe",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\n..."
+  }
+}
+```
+
+<ResponseField name="id" type="string">
+  Canonical ActivityPub actor URI.
+</ResponseField>
+
+<ResponseField name="type" type="string">
+  `Person` for user accounts, `Application` for the instance actor.
+</ResponseField>
+
+<ResponseField name="inbox" type="string">
+  URL where remote servers deliver activities.
+</ResponseField>
+
+<ResponseField name="outbox" type="string">
+  URL of the user's public post collection.
+</ResponseField>
+
+<ResponseField name="publicKey" type="object">
+  RSA public key used for HTTP Signature verification.
+</ResponseField>
+
+---
+
+### User inbox
+
+Receives ActivityPub activities (Follow, Undo, Create, Delete, Like, Announce) delivered by remote instances. HTTP signatures are verified before processing.
+
+```
+POST /ap/users/:username/inbox
+```
+
+<ParamField path="username" type="string" required>
+  The recipient username.
+</ParamField>
+
+The request body must be a valid ActivityPub activity. Activities are verified using HTTP Signatures and processed asynchronously — the endpoint returns `202 Accepted` immediately.
+
+```json
+{ "status": "accepted" }
+```
+
+<Warning>
+  The actor in the request body must match the actor identified by the HTTP Signature. Mismatches return `403 Forbidden`.
+</Warning>
+
+---
+
+### Shared inbox
+
+A shared inbox for delivering activities addressed to multiple local users in a single request.
+
+```
+POST /ap/inbox
+```
+
+Behaves identically to the user inbox. Accepts the same activity types and applies the same HTTP Signature verification.
+
+---
+
+### User outbox
+
+Returns the user's public posts as an ActivityPub `OrderedCollection`.
+
+```
+GET /ap/users/:username/outbox
+```
+
+<ParamField path="username" type="string" required>
+  Mention username.
+</ParamField>
+
+<ParamField query="page" type="boolean">
+  Set to `true` to fetch the first page of activities. Omit for the collection summary.
+</ParamField>
+
+Without `?page=true`, returns a summary:
+
+```json
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://mention.earth/ap/users/john_doe/outbox",
+  "type": "OrderedCollection",
+  "totalItems": 42,
+  "first": "https://mention.earth/ap/users/john_doe/outbox?page=true"
+}
+```
+
+With `?page=true`, returns an `OrderedCollectionPage` with up to 20 `Create` activities.
+
+---
+
+### Followers collection
+
+Returns the count of accepted inbound follows for a user.
+
+```
+GET /ap/users/:username/followers
+```
+
+```json
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://mention.earth/ap/users/john_doe/followers",
+  "type": "OrderedCollection",
+  "totalItems": 1024
+}
+```
+
+---
+
+### Following collection
+
+Returns the count of accepted outbound follows for a user.
+
+```
+GET /ap/users/:username/following
+```
+
+```json
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://mention.earth/ap/users/john_doe/following",
+  "type": "OrderedCollection",
+  "totalItems": 512
+}
+```
+
+---
+
+## Federation API endpoints
+
+These endpoints are used by the Mention frontend to manage fediverse interactions. They are mounted under `/federation` and **require authentication** for write operations. Rate-limited to 200 requests per minute per user or IP.
+
+### Follow a remote actor
+
+Send a `Follow` activity to a remote fediverse account.
+
+```
+POST /federation/follow
+```
+
+<ParamField body="actorUri" type="string" required>
+  The fully-qualified ActivityPub actor URI of the account to follow (e.g. `https://mastodon.social/users/alice`).
+</ParamField>
+
+```bash
+curl -X POST https://api.mention.earth/federation/follow \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"actorUri": "https://mastodon.social/users/alice"}'
+```
+
+```json
+{
+  "success": true,
+  "pending": true,
+  "actorUri": "https://mastodon.social/users/alice"
+}
+```
+
+<ResponseField name="success" type="boolean">
+  Whether the follow activity was dispatched.
+</ResponseField>
+
+<ResponseField name="pending" type="boolean">
+  `true` if the remote account requires manual approval. `false` once accepted.
+</ResponseField>
+
+---
+
+### Unfollow a remote actor
+
+Send an `Undo Follow` activity to a remote fediverse account.
+
+```
+POST /federation/unfollow
+```
+
+<ParamField body="actorUri" type="string" required>
+  The fully-qualified ActivityPub actor URI to unfollow.
+</ParamField>
+
+```bash
+curl -X POST https://api.mention.earth/federation/unfollow \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"actorUri": "https://mastodon.social/users/alice"}'
+```
+
+```json
+{ "success": true, "actorUri": "https://mastodon.social/users/alice" }
+```
+
+---
+
+### List federated following
+
+List the remote accounts that the authenticated user follows via federation.
+
+```
+GET /federation/following
+```
+
+```bash
+curl https://api.mention.earth/federation/following \
+  -H "Authorization: Bearer <token>"
+```
+
+```json
+{
+  "following": [
+    {
+      "actorUri": "https://mastodon.social/users/alice",
+      "handle": "alice",
+      "instance": "mastodon.social",
+      "fullHandle": "@alice@mastodon.social",
+      "displayName": "Alice",
+      "avatarUrl": "https://mastodon.social/avatars/alice.jpg",
+      "isFollowing": true,
+      "isFollowPending": false
+    }
+  ]
+}
+```
+
+<ResponseField name="following" type="array">
+  List of federated follow objects.
+  <Expandable title="properties">
+    <ResponseField name="actorUri" type="string">Canonical ActivityPub actor URI.</ResponseField>
+    <ResponseField name="handle" type="string">Username on the remote instance.</ResponseField>
+    <ResponseField name="instance" type="string">Domain of the remote instance.</ResponseField>
+    <ResponseField name="fullHandle" type="string">Full `@user@instance` handle.</ResponseField>
+    <ResponseField name="displayName" type="string">Display name of the remote actor.</ResponseField>
+    <ResponseField name="avatarUrl" type="string">Avatar URL from the remote instance.</ResponseField>
+    <ResponseField name="isFollowing" type="boolean">`true` if the follow is accepted.</ResponseField>
+    <ResponseField name="isFollowPending" type="boolean">`true` if the follow is awaiting approval.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+### List federated followers
+
+List remote accounts that follow the authenticated user via federation.
+
+```
+GET /federation/followers
+```
+
+```bash
+curl https://api.mention.earth/federation/followers \
+  -H "Authorization: Bearer <token>"
+```
+
+```json
+{
+  "followers": [
+    {
+      "actorUri": "https://mastodon.social/users/bob",
+      "handle": "bob",
+      "instance": "mastodon.social",
+      "fullHandle": "@bob@mastodon.social",
+      "displayName": "Bob",
+      "avatarUrl": "https://mastodon.social/avatars/bob.jpg"
+    }
+  ]
+}
+```
+
+---
+
+### Get posts from a federated actor
+
+Fetch locally cached posts from a remote actor. If no posts are cached, a background sync is triggered.
+
+```
+GET /federation/actor/posts
+```
+
+<ParamField query="uri" type="string" required>
+  The ActivityPub actor URI whose posts to fetch.
+</ParamField>
+
+<ParamField query="cursor" type="string">
+  ISO 8601 datetime cursor for pagination (from `nextCursor` in the previous response).
+</ParamField>
+
+```bash
+curl -G https://api.mention.earth/federation/actor/posts \
+  -H "Authorization: Bearer <token>" \
+  --data-urlencode "uri=https://mastodon.social/users/alice"
+```
+
+```json
+{
+  "posts": [...],
+  "hasMore": false,
+  "nextCursor": null,
+  "syncing": false
+}
+```
+
+<ResponseField name="posts" type="array">
+  Hydrated post objects from the remote actor, rendered identically to native posts.
+</ResponseField>
+
+<ResponseField name="syncing" type="boolean">
+  `true` when the server triggered a background sync because no local posts were found. Retry after a few seconds.
+</ResponseField>
+
+---
+
+## Deployment requirements
+
+For federation to work correctly, the `/.well-known/` and `/ap/` paths on `mention.earth` must route to the Mention backend, **not** the static frontend.
+
+```bash
+# Required environment variables
+FEDERATION_DOMAIN=mention.earth          # Domain used in actor URLs
+FEDERATION_ENABLED=true                  # Set to "false" to disable
+FEDERATION_BLOCKED_DOMAINS=bad.example   # Comma-separated blocked domains
+FEDERATION_DELIVERY_RETRIES=5            # Max retry attempts for outgoing activities
+FEDERATION_MAX_CONTENT_LENGTH=50000      # Max content size for incoming activities (bytes)
+```
+
+See [Deployment Overview](/deployment/overview) for path-based routing configuration.

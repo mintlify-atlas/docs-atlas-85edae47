@@ -1,0 +1,201 @@
+---
+title: "Mentions and Hashtags"
+description: "Tag users with @mentions and categorize content with #hashtags in Mention posts and replies."
+---
+
+Mention supports Instagram-style user tagging and hashtag categorization. When composing a post or reply, typing `@` triggers an autocomplete picker, and typing `#` marks a hashtag.
+
+## How @mentions work
+
+<Steps>
+  <Step title="Type @">
+    In any compose or reply field powered by `MentionTextInput`, type `@` followed by a partial username.
+  </Step>
+  <Step title="Select from the dropdown">
+    The `MentionPicker` component appears with up to 10 matching users. Each result shows the user's avatar, display name, username, and a verified badge if applicable.
+
+    Search results are fetched via `oxyServices.searchProfiles()` with a 300 ms debounce to prevent excessive API calls.
+  </Step>
+  <Step title="Mention is inserted">
+    Selecting a user inserts the mention in the raw text as `@[username](userId)` and displays it as the styled `@username` link to the author. The cursor advances past the inserted text.
+  </Step>
+  <Step title="Post is submitted">
+    When the post is submitted, the frontend extracts only the user IDs and sends them as a separate `mentions` array:
+
+    ```typescript
+    {
+      content: { text: "Hey @[john_doe](user123), check this out!" },
+      mentions: ["user123"]
+    }
+    ```
+  </Step>
+</Steps>
+
+## MentionTextInput component
+
+`MentionTextInput` (`packages/frontend/components/MentionTextInput.tsx`) is the enhanced text input that handles mention detection and insertion.
+
+### Props
+
+```typescript
+interface MentionTextInputProps extends Omit<TextInputProps, "onChangeText" | "value"> {
+  value: string;
+  onChangeText: (text: string) => void;
+  onMentionsChange?: (mentions: MentionData[]) => void;
+  placeholder?: string;
+  maxLength?: number;
+  multiline?: boolean;
+  style?: any;
+}
+```
+
+### Imperative handle
+
+```typescript
+interface MentionTextInputHandle {
+  /** Insert text at the current cursor position */
+  insertTextAtCursor: (text: string) => void;
+  /** Focus the underlying TextInput */
+  focus: () => void;
+}
+```
+
+### MentionData interface
+
+The `onMentionsChange` callback receives an array of `MentionData` objects — one per resolved mention in the current text:
+
+```typescript
+interface MentionData {
+  userId: string;
+  username: string;
+  displayName: string;
+}
+```
+
+### Usage in compose
+
+```tsx
+import MentionTextInput, { MentionData } from '@/components/MentionTextInput';
+
+const [postContent, setPostContent] = useState('');
+const [mentions, setMentions] = useState<MentionData[]>([]);
+
+<MentionTextInput
+  value={postContent}
+  onChangeText={setPostContent}
+  onMentionsChange={setMentions}
+  placeholder="What's new?"
+  multiline
+  autoFocus
+/>
+
+// When submitting:
+await createPost({
+  content: { text: postContent.trim() },
+  mentions: mentions.map(m => m.userId), // Only user IDs go to the backend
+});
+```
+
+## MentionPicker component
+
+`MentionPicker` (`packages/frontend/components/MentionPicker.tsx`) is the autocomplete dropdown rendered inside `MentionTextInput`.
+
+```typescript
+interface MentionUser {
+  id: string;
+  username: string;
+  name: string;
+  avatar?: string;
+  verified?: boolean;
+}
+
+interface MentionPickerProps {
+  query: string;
+  onSelect: (user: MentionUser) => void;
+  onClose: () => void;
+  maxHeight?: number;
+}
+```
+
+<Note>
+  The picker only mounts when needed (lazy rendering) and is dismissed automatically when the user moves the cursor away from the `@query` segment.
+</Note>
+
+## Storage format
+
+Mentions are stored in post text using a structured format that keeps the display name and user ID separate:
+
+| Context | Format |
+|---------|--------|
+| Database / API | `@[john_doe](user123)` |
+| Compose mode (what the author sees) | `@john_doe` |
+| View mode (rendered post) | `@john_doe` (colored, clickable link) |
+
+This separation ensures that username changes on the identity provider do not break existing mention links, since the backend resolves the stored user ID.
+
+### Database schema
+
+The `Post` model stores resolved mention IDs in a separate indexed array:
+
+```typescript
+// packages/backend/src/models/Post.ts
+{
+  mentions: [{ type: String, index: true }], // oxyUserIds
+}
+```
+
+The compound index `{ mentions: 1, createdAt: -1 }` enables efficient queries such as "find all posts that mention me".
+
+## Rendering mentions
+
+The `LinkifiedText` component (`packages/frontend/components/common/LinkifiedText.tsx`) parses the `@[displayName](userId)` format in stored post content and renders each mention as a tappable, colored `@displayName` link. Tapping navigates to the user's profile:
+
+```tsx
+router.push(`/@${displayName}`);
+```
+
+Mentions use the theme's `colors.linkColor` by default and can be overridden with the `linkStyle` prop.
+
+## Notifications for mentions
+
+When a post is saved, the backend calls `createMentionNotifications()` in `packages/backend/src/utils/notificationUtils.ts`. This creates one notification per unique mentioned user (self-mentions and duplicates are skipped).
+
+See [Notifications](/features/notifications) for the full delivery flow.
+
+## Hashtags
+
+Hashtags are extracted from post content and stored in the `hashtags` field of the `Post` model:
+
+```typescript
+hashtags: [{ type: String, index: true }]
+```
+
+Posts can be filtered by hashtag using `GET /api/posts/hashtag/:hashtag`. The index `{ hashtags: 1, createdAt: -1 }` keeps these queries fast.
+
+<Tip>
+  Use `GET /api/posts/hashtag/:hashtag` to build a hashtag page that shows all public posts containing a given tag.
+</Tip>
+
+## Performance considerations
+
+- **Debounced search** — the `MentionPicker` waits 300 ms after the last keystroke before querying the API.
+- **Memoized callbacks** — `MentionTextInput` uses `useCallback` and `memo` to prevent unnecessary re-renders.
+- **Regex-based extraction** — mention data is parsed from text with a single regex pass when the component's value changes.
+- **Cursor tracking** — only minimal state is updated on each keystroke to keep the input responsive.
+
+## Security
+
+- The backend validates that all user IDs in the `mentions` array correspond to real Oxy users.
+- Text content is sanitized to prevent XSS.
+- The search API is rate-limited.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Posts and feeds" icon="newspaper" href="/features/posts-and-feeds">
+    Post model structure and feed types.
+  </Card>
+  <Card title="Notifications" icon="bell" href="/features/notifications">
+    How mention notifications are delivered in real time.
+  </Card>
+</CardGroup>

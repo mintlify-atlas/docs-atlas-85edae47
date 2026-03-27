@@ -1,0 +1,197 @@
+---
+title: "Rooms and Spaces"
+description: "Host and join live audio/video conversations with Agora, the live room feature built on LiveKit."
+---
+
+Agora is Mention's live audio and video room system. It lets users create scheduled or instant rooms for live conversations, with distinct roles for hosts, speakers, and listeners. Agora is accessible at [agora.mention.earth](https://agora.mention.earth) and integrated directly into the main Mention frontend at the `/agora` route.
+
+## Technology
+
+Rooms are powered by [LiveKit](https://livekit.io), an open-source WebRTC infrastructure platform. The frontend uses the following LiveKit packages:
+
+```json
+"@livekit/react-native": "^2.9.6",
+"@livekit/react-native-expo-plugin": "^1.0.2",
+"@livekit/react-native-webrtc": "^137.0.2",
+"livekit-client": "^2.17.3"
+```
+
+The backend generates LiveKit access tokens via `packages/backend/src/utils/livekit.ts` and manages room lifecycle through the LiveKit server SDK.
+
+## Room types
+
+The `Room` model (`packages/backend/src/models/Room.ts`) defines three room types:
+
+| Type | Description |
+|------|-------------|
+| `talk` | Open conversation — any participant can be promoted to speaker |
+| `stage` | Structured format — speakers are invited by the host |
+| `broadcast` | One-to-many stream — only the host publishes audio/video |
+
+## Room roles
+
+| Role | Permissions |
+|------|-------------|
+| **Host** | Creates the room, starts/stops/ends it, invites or removes speakers, uploads the room image, generates RTMP keys |
+| **Speaker** | Publishes audio/video to the room |
+| **Listener** | Receives audio/video, cannot publish |
+
+For broadcast rooms, the host is the only publisher; all other participants receive a listen-only LiveKit token.
+
+```typescript
+// Token generation (rooms.routes.ts)
+if (room.type === RoomType.BROADCAST) {
+  const isHost = room.host === userId;
+  token = await generateBroadcastToken(roomId, userId, isHost);
+} else {
+  let role: 'host' | 'speaker' | 'listener' = 'listener';
+  if (room.host === userId) role = 'host';
+  else if (room.speakers.includes(userId)) role = 'speaker';
+  token = await generateRoomToken(roomId, userId, role);
+}
+```
+
+## Speaker permission settings
+
+The `speakerPermission` field controls who can be a speaker:
+
+| Value | Meaning |
+|-------|---------|
+| `everyone` | Any participant can speak |
+| `followers` | Only followers of the host can speak |
+| `invited` | Only users explicitly added by the host |
+
+## Creating a room
+
+<Steps>
+  <Step title="Open Agora">
+    Navigate to `/agora` in the app. The `AgoraScreen` component (`packages/frontend/app/(app)/agora/index.tsx`) shows live and scheduled rooms.
+  </Step>
+  <Step title="Tap Create">
+    Tap the **Create** button in the header. This opens the `CreateRoomSheet` bottom sheet.
+  </Step>
+  <Step title="Fill in room details">
+    Provide a title (required), optional description, topic, tags, speaker permission, and room type. You can also set a `scheduledStart` date for a future room.
+  </Step>
+  <Step title="Submit">
+    The frontend sends `POST /api/rooms`:
+
+    ```typescript
+    {
+      title: "My Room",
+      description: "Optional description",
+      type: "talk",            // 'talk' | 'stage' | 'broadcast'
+      speakerPermission: "invited",
+      maxParticipants: 100,
+      scheduledStart: "2026-04-01T18:00:00Z", // optional
+      tags: ["music", "tech"],
+      recordingEnabled: true
+    }
+    ```
+
+    The host is automatically added as a speaker. The room starts in `scheduled` status.
+  </Step>
+  <Step title="Start the room">
+    When ready to go live, the host taps **Start Room**. This calls `POST /api/rooms/:id/start`, which creates the LiveKit room and changes the status to `live`.
+  </Step>
+</Steps>
+
+<Note>
+  Recording is enabled by default (`recordingEnabled: true`). When the host starts the room, recording begins automatically and stops when the room ends. Recordings are capped at 1 hour and stored for approximately 6 months.
+</Note>
+
+## Joining a room
+
+<Steps>
+  <Step title="Find a live room">
+    Live rooms appear in the **Live Now** section of the Agora screen. Tap a `RoomCard` to open the room detail view at `/agora/:id`.
+  </Step>
+  <Step title="Tap Join Live">
+    The **Join Live** button calls `joinLiveRoom(id)` from `LiveRoomContext`. The frontend requests a LiveKit token from `POST /api/rooms/:id/token` and connects to the LiveKit session.
+  </Step>
+  <Step title="Participate">
+    Listeners can hear the room. Hosts can promote listeners to speakers via `POST /api/rooms/:id/speakers`.
+  </Step>
+  <Step title="Leave">
+    Tap leave to disconnect. The frontend calls `POST /api/rooms/:id/leave`. The user is removed from the `participants` array; if they were a speaker (but not the host), they are also removed from `speakers`.
+  </Step>
+</Steps>
+
+## Room lifecycle
+
+```
+scheduled → live → ended
+                ↑
+               stop (returns to scheduled)
+```
+
+| Endpoint | Action |
+|----------|--------|
+| `POST /api/rooms/:id/start` | Move `scheduled` → `live`, create LiveKit room, auto-start recording |
+| `POST /api/rooms/:id/stop` | Move `live` → `scheduled` (host can restart later) |
+| `POST /api/rooms/:id/end` | Move `live` → `ended` (permanent), clean up LiveKit room and ingress |
+
+## External streaming (broadcast rooms)
+
+Hosts can bring in an external stream via URL ingress or RTMP:
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /api/rooms/:id/stream` | Start a URL-based ingress (HLS/DASH source) |
+| `POST /api/rooms/:id/stream/rtmp` | Generate an RTMP URL and stream key |
+| `DELETE /api/rooms/:id/stream` | Stop the active ingress |
+| `PATCH /api/rooms/:id/stream` | Update stream metadata (title, image, description) |
+
+Room images can be uploaded via `POST /api/rooms/:id/image` (JPEG, PNG, GIF, or WebP, max 10 MB).
+
+## Real-time socket events
+
+The backend emits events on the `/spaces` Socket.IO namespace (for backward compatibility) and `/rooms` namespace:
+
+| Event | Trigger |
+|-------|---------|
+| `space:started` | Room goes live |
+| `space:ended` | Room ends or is stopped |
+| `space:participant:joined` | A user joins |
+| `space:participant:left` | A user leaves |
+| `space:speaker:added` | Host promotes a listener |
+| `space:speaker:removed` | Host removes a speaker |
+| `space:stream:started` | External stream begins |
+| `space:stream:stopped` | External stream ends |
+| `room:recording:started` | Recording begins |
+| `room:recording:stopped` | Recording ends |
+
+## Recordings
+
+Finished recordings are listed at `GET /api/rooms/:id/recordings`. Access is filtered by the `access` field:
+
+| Access level | Who can view |
+|--------------|--------------|
+| `public` | Anyone |
+| `participants` | Only users who joined the room |
+
+The host always has access to all recordings for their rooms.
+
+## Room statistics
+
+Each room tracks:
+
+```typescript
+stats: {
+  peakListeners: number; // Highest simultaneous participant count
+  totalJoined: number;   // Cumulative join count
+}
+```
+
+These are displayed in the room detail view.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Posts and feeds" icon="newspaper" href="/features/posts-and-feeds">
+    Rooms can be embedded as attachments in posts.
+  </Card>
+  <Card title="Environment variables" icon="key" href="/deployment/environment-variables">
+    Configure LIVEKIT_URL and related credentials.
+  </Card>
+</CardGroup>

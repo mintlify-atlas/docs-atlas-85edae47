@@ -1,0 +1,116 @@
+---
+title: "Environment Variables"
+description: "Complete reference for all Mention environment variables."
+---
+
+This page documents every environment variable used by the Mention backend and the DigitalOcean App Platform deployment.
+
+## Backend Variables
+
+These variables are set on the `mention` service component in the DigitalOcean App Platform console (or in `packages/backend/.env` for local development).
+
+### Core
+
+| Variable | Default | Description |
+|---|---|---|
+| `MONGODB_URI` | — | MongoDB connection string. Points to the managed `db-oxy` cluster in production. |
+| `PORT` | `3000` | Port the Express server listens on. |
+| `NODE_ENV` | `development` | Runtime environment. Set to `production` in App Platform. |
+
+### External Services
+
+| Variable | Default | Description |
+|---|---|---|
+| `OPENAI_API_KEY` | — | OpenAI API key used by the AI assistant feature. |
+| `TELEGRAM_BOT_TOKEN` | — | Telegram bot token for Telegram integration. |
+
+### LiveKit (Rooms & Spaces)
+
+| Variable | Default | Description |
+|---|---|---|
+| `LIVEKIT_URL` | — | WebSocket URL of your LiveKit server (e.g. `wss://your-livekit.livekit.cloud`). |
+| `LIVEKIT_API_KEY` | — | LiveKit API key for token generation and room management. |
+| `LIVEKIT_API_SECRET` | — | LiveKit API secret used to sign access tokens and server-side calls. |
+
+### Push Notifications (Firebase)
+
+| Variable | Default | Description |
+|---|---|---|
+| `FIREBASE_PROJECT_ID` | — | Firebase project ID for FCM push notifications. |
+| `FIREBASE_SERVICE_ACCOUNT_BASE64` | — | Base64-encoded Firebase service account JSON. Used to authenticate with FCM. |
+
+<Tip>
+To generate `FIREBASE_SERVICE_ACCOUNT_BASE64`, download your Firebase service account JSON from the Firebase console and run:
+```bash
+base64 -i service-account.json
+```
+</Tip>
+
+### Federation (ActivityPub)
+
+| Variable | Default | Description |
+|---|---|---|
+| `FEDERATION_DOMAIN` | `mention.earth` | Domain used to construct ActivityPub actor URLs (e.g., `@user@mention.earth`). |
+| `FEDERATION_ENABLED` | `true` | Set to `false` to disable all federation. |
+| `FEDERATION_BLOCKED_DOMAINS` | — | Comma-separated list of domains to block from federation. |
+| `FEDERATION_DELIVERY_RETRIES` | `5` | Maximum retry attempts for outgoing ActivityPub activity delivery. |
+| `FEDERATION_MAX_CONTENT_LENGTH` | `50000` | Maximum content size (bytes) accepted for incoming activities. |
+
+<Note>
+The `/.well-known/` and `/ap/` paths on `mention.earth` must route to the backend. In production this is handled by Cloudflare zone-level Redirect Rules. See the [Cloudflare deployment guide](/deployment/cloudflare) for details.
+</Note>
+
+## DigitalOcean App Platform Variables
+
+These variables are set at the **app level** in the DigitalOcean App Platform console, making them available to all service components at both build and run time.
+
+| Variable | Value | Scope | Description |
+|---|---|---|---|
+| `API_URL` | `https://api.mention.earth` | `RUN_AND_BUILD_TIME` | Base URL of the Mention backend API. |
+| `API_URL_OXY` | `https://api.oxy.so` | `RUN_AND_BUILD_TIME` | Base URL of the Oxy authentication API. |
+| `EXPO_PUBLIC_API_URL` | `https://api.mention.earth` | `RUN_AND_BUILD_TIME` | Public API URL injected into the Expo build at compile time. |
+| `NODE_ENV` | `production` | `RUN_AND_BUILD_TIME` | Overrides the default `development` value for production builds. |
+
+<Warning>
+Do not store secrets (API keys, database URIs, tokens) as app-level variables. Configure them as **encrypted** variables on the individual service component in the App Platform console.
+</Warning>
+
+## Local Development
+
+For local development, create `packages/backend/.env`:
+
+```env
+# Database
+MONGODB_URI=mongodb://localhost:27017
+
+# Server
+PORT=3000
+NODE_ENV=development
+
+# External services
+OPENAI_API_KEY=your_openai_api_key
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+
+# LiveKit (Rooms & Spaces)
+LIVEKIT_URL=wss://your-livekit.livekit.cloud
+LIVEKIT_API_KEY=your_livekit_api_key
+LIVEKIT_API_SECRET=your_livekit_api_secret
+
+# Firebase (optional for local)
+FIREBASE_PROJECT_ID=your-project-id
+FIREBASE_SERVICE_ACCOUNT_BASE64=base64-encoded-json
+
+# Federation
+FEDERATION_DOMAIN=mention.earth
+FEDERATION_ENABLED=true
+FEDERATION_DELIVERY_RETRIES=5
+FEDERATION_MAX_CONTENT_LENGTH=50000
+```
+
+You can also use Docker Compose to start a local MongoDB and Redis instance alongside the backend:
+
+```bash
+docker compose up
+```
+
+See the [quickstart guide](/quickstart) for the full local development setup.

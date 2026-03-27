@@ -1,0 +1,299 @@
+---
+title: "Notifications"
+description: "In-app notifications and device push token management."
+---
+
+Notifications inform users of activity on their content and account. All notification endpoints are mounted under `/notifications` and require authentication.
+
+Real-time delivery is handled via Socket.IO on the `/notifications` namespace. The HTTP endpoints are used for initial load and bulk operations.
+
+## Notification object
+
+<ResponseField name="_id" type="string">
+  Unique notification identifier.
+</ResponseField>
+
+<ResponseField name="recipientId" type="string">
+  Oxy user ID of the notification recipient.
+</ResponseField>
+
+<ResponseField name="actorId" type="string">
+  Oxy user ID of the user who triggered the notification (or `"system"` for system notifications).
+</ResponseField>
+
+<ResponseField name="type" type="string">
+  Notification type. One of: `like`, `reply`, `mention`, `follow`, `repost`, `quote`, `welcome`, `post`, `poke`.
+</ResponseField>
+
+<ResponseField name="entityId" type="string">
+  ID of the related entity (post or profile).
+</ResponseField>
+
+<ResponseField name="entityType" type="string">
+  Type of the related entity: `post`, `reply`, or `profile`.
+</ResponseField>
+
+<ResponseField name="read" type="boolean">
+  Whether the notification has been read.
+</ResponseField>
+
+<ResponseField name="createdAt" type="string">
+  ISO 8601 timestamp.
+</ResponseField>
+
+<ResponseField name="actorId_populated" type="object">
+  Resolved actor profile, included in list and real-time responses.
+  <Expandable title="properties">
+    <ResponseField name="_id" type="string">Actor user ID.</ResponseField>
+    <ResponseField name="username" type="string">Actor username.</ResponseField>
+    <ResponseField name="name" type="string">Actor display name.</ResponseField>
+    <ResponseField name="avatar" type="string">Actor avatar URL.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="preview" type="string">
+  For `post` and `reply` notifications: a truncated preview of the related post text (max 200 characters).
+</ResponseField>
+
+<ResponseField name="post" type="object">
+  For `post` and `reply` notifications: the full hydrated post object for in-notification display.
+</ResponseField>
+
+---
+
+## List notifications
+
+Retrieve notifications for the authenticated user in reverse-chronological order.
+
+```
+GET /notifications
+```
+
+<ParamField query="limit" type="number">
+  Maximum number of notifications to return. Clamped between 1 and 50 (default 20).
+</ParamField>
+
+<ParamField query="cursor" type="string">
+  Cursor for pagination. Pass the `nextCursor` value from the previous response. Must be a valid notification `_id`.
+</ParamField>
+
+<Tabs>
+  <Tab title="Request">
+    ```bash
+    curl https://api.mention.earth/notifications?limit=20 \
+      -H "Authorization: Bearer <token>"
+    ```
+  </Tab>
+  <Tab title="Response">
+    ```json
+    {
+      "notifications": [
+        {
+          "_id": "64a1b2c3d4e5f6a7b8c9d0e1",
+          "recipientId": "user_abc123",
+          "actorId": "user_xyz789",
+          "type": "like",
+          "entityId": "64b2c3d4e5f6a7b8c9d0e1f2",
+          "entityType": "post",
+          "read": false,
+          "createdAt": "2024-01-15T12:00:00.000Z",
+          "actorId_populated": {
+            "_id": "user_xyz789",
+            "username": "jane_doe",
+            "name": "Jane Doe",
+            "avatar": "https://cdn.mention.earth/avatars/jane.jpg"
+          }
+        }
+      ],
+      "unreadCount": 5,
+      "hasMore": true,
+      "nextCursor": "64a1b2c3d4e5f6a7b8c9d0e1",
+      "limit": 20
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Response fields
+
+<ResponseField name="notifications" type="array">
+  List of notification objects.
+</ResponseField>
+
+<ResponseField name="unreadCount" type="number">
+  Total number of unread notifications for the user.
+</ResponseField>
+
+<ResponseField name="hasMore" type="boolean">
+  Whether more notifications exist beyond this page.
+</ResponseField>
+
+<ResponseField name="nextCursor" type="string">
+  Pass this as the `cursor` query parameter to load the next page. Omitted when `hasMore` is `false`.
+</ResponseField>
+
+---
+
+## Unread count
+
+Get the number of unread notifications without fetching the full list.
+
+```
+GET /notifications/unread-count
+```
+
+```bash
+curl https://api.mention.earth/notifications/unread-count \
+  -H "Authorization: Bearer <token>"
+```
+
+```json
+{ "count": 5 }
+```
+
+---
+
+## Mark a notification as read
+
+Mark a single notification as read. Emits a `notificationUpdated` Socket.IO event to the recipient's room.
+
+```
+PATCH /notifications/:id/read
+PUT   /notifications/:id/read
+```
+
+<ParamField path="id" type="string" required>
+  Notification ID to mark as read.
+</ParamField>
+
+```bash
+curl -X PATCH https://api.mention.earth/notifications/64a1b2c3d4e5f6a7b8c9d0e1/read \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+## Mark all notifications as read
+
+Mark every notification as read for the authenticated user. Emits an `allNotificationsRead` Socket.IO event.
+
+```
+PATCH /notifications/read-all
+PUT   /notifications/read-all
+```
+
+```bash
+curl -X PATCH https://api.mention.earth/notifications/read-all \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+## Archive a notification
+
+Soft-archive a notification (marks it as read).
+
+```
+PATCH /notifications/:id/archive
+```
+
+---
+
+## Delete a notification
+
+Permanently delete a notification.
+
+```
+DELETE /notifications/:id
+```
+
+---
+
+## Push token management
+
+Mention supports Firebase Cloud Messaging (FCM) push notifications. Register a device token so the server can deliver push notifications when the app is in the background.
+
+### Register a push token
+
+```
+POST /notifications/push-token
+```
+
+<ParamField body="token" type="string" required>
+  FCM device token.
+</ParamField>
+
+<ParamField body="platform" type="string">
+  Device platform: `ios`, `android`, or `web`. Defaults to `unknown`.
+</ParamField>
+
+<ParamField body="type" type="string">
+  Token type. Defaults to `fcm`.
+</ParamField>
+
+<ParamField body="deviceId" type="string">
+  Optional device identifier.
+</ParamField>
+
+<ParamField body="locale" type="string">
+  BCP 47 locale of the device (e.g. `en-US`).
+</ParamField>
+
+```bash
+curl -X POST https://api.mention.earth/notifications/push-token \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "token": "fcm_device_token_here",
+    "platform": "ios",
+    "type": "fcm",
+    "locale": "en-US"
+  }'
+```
+
+```json
+{ "ok": true, "id": "64a1b2c3d4e5f6a7b8c9d0e1" }
+```
+
+### Unregister a push token
+
+Remove a device token when the user logs out or disables notifications.
+
+```
+DELETE /notifications/push-token
+```
+
+<ParamField body="token" type="string" required>
+  FCM device token to remove.
+</ParamField>
+
+```bash
+curl -X DELETE https://api.mention.earth/notifications/push-token \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"token": "fcm_device_token_here"}'
+```
+
+```json
+{ "ok": true }
+```
+
+---
+
+## Real-time events
+
+Connect to the `/notifications` Socket.IO namespace to receive live events.
+
+<Info>
+  The `/notifications` namespace requires authentication. The server disconnects unauthenticated sockets immediately.
+</Info>
+
+| Event | Direction | Description |
+|-------|-----------|-------------|
+| `notification` | Server → Client | A new notification was created. |
+| `notificationUpdated` | Server → Client | A notification was marked as read. |
+| `notificationArchived` | Server → Client | A notification was archived. |
+| `notificationDeleted` | Server → Client | A notification was deleted. |
+| `allNotificationsRead` | Server → Client | All notifications were marked as read. |
+| `markNotificationRead` | Client → Server | Mark a single notification as read via socket. |
+| `markAllNotificationsRead` | Client → Server | Mark all notifications as read via socket. |

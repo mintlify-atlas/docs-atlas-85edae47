@@ -1,0 +1,194 @@
+---
+title: "Localization"
+description: "How Mention handles multiple languages using i18next, how users switch languages, what locales are available, and how contributors can add a new language."
+---
+
+Mention ships with multi-language support powered by [i18next](https://www.i18next.com) and [react-i18next](https://react.i18next.com). Every user-visible string in the frontend is looked up through the translation layer, and users can switch languages at any time from the settings screen.
+
+## Supported languages
+
+Three locales are bundled with the app:
+
+| Language | Native name | Code | File |
+|---|---|---|---|
+| English | English | `en-US` | `locales/en.json` |
+| Spanish | Español | `es-ES` | `locales/es.json` |
+| Italian | Italiano | `it-IT` | `locales/it.json` |
+
+English (`en-US`) is the fallback language. If a key is missing from a non-English locale, the English string is displayed instead.
+
+## How language switching works
+
+The language selection is stored locally on the device under the key `user_language_preference`. On startup, the app reads this value and initializes i18next with the saved locale before the first render.
+
+<Steps>
+  <Step title="Open settings">
+    Navigate to **Settings** from the sidebar or bottom navigation bar.
+  </Step>
+
+  <Step title="Tap Language">
+    Select the **Language** option in the Personalization group.
+  </Step>
+
+  <Step title="Select a language">
+    Tap any language in the list. A checkmark appears next to the active selection. The app switches immediately — no restart required.
+  </Step>
+</Steps>
+
+The language switch calls `i18n.changeLanguage(code)` and persists the choice with `storeData(LANGUAGE_STORAGE_KEY, code)`. The next time the app starts, `loadSavedLanguage()` reads the stored code and passes it to `i18nInit()`.
+
+<Note>
+Language is a device-level preference, not a server-side account setting. It is not synced across devices.
+</Note>
+
+## Auto-translate
+
+Premium users have access to an **Auto-translate** toggle on the Language settings screen. When enabled, posts written in a language different from the app language are automatically translated inline.
+
+Non-premium users see a locked toggle that links to the subscription screen.
+
+## i18n configuration
+
+The i18n instance is initialized in `packages/frontend/lib/i18n.ts` using the pattern below:
+
+```typescript
+import i18n, { init as i18nInit, use as i18nUse } from "i18next";
+import { initReactI18next } from "react-i18next";
+
+import enUS from "@/locales/en.json";
+import esES from "@/locales/es.json";
+import itIT from "@/locales/it.json";
+
+const i18nResources = {
+  "en-US": { translation: enUS },
+  "es-ES": { translation: esES },
+  "it-IT": { translation: itIT },
+} as const;
+
+i18nUse(initReactI18next);
+await i18nInit({
+  resources: i18nResources,
+  lng: initialLanguage,     // loaded from device storage
+  fallbackLng: "en-US",
+  interpolation: { escapeValue: false },
+});
+```
+
+## Translation file structure
+
+Each locale file is a flat or nested JSON object mapping translation keys to localized strings. Interpolation variables are wrapped in double curly braces.
+
+```json
+{
+  "Home": "Home",
+  "notification.follow": "{{actorName}} started following you",
+  "settings.feed.recency.halfLifeHoursDesc": "Hours after which a post loses 50% of its recency score (6-72 hours)",
+  "notifications": {
+    "tabs": {
+      "all": "All",
+      "mentions": "Mentions"
+    }
+  }
+}
+```
+
+Keys follow two patterns:
+
+- **Dot-separated namespacing** — e.g. `settings.privacy.title`, `notification.like`
+- **Flat natural language strings** — e.g. `"Home"`, `"Follow"`, `"Search"`
+
+### Using translations in components
+
+Components consume translations via the `useTranslation` hook:
+
+```typescript
+import { useTranslation } from "react-i18next";
+
+function MyComponent() {
+  const { t } = useTranslation();
+
+  return (
+    <Text>{t("settings.privacy.title")}</Text>
+  );
+}
+```
+
+A `defaultValue` can be provided as a fallback while translations are being added:
+
+```typescript
+t("settings.feed.title", { defaultValue: "Feed Settings" })
+```
+
+## Adding a new language
+
+To contribute a new locale to Mention:
+
+<Steps>
+  <Step title="Create the translation file">
+    Copy `packages/frontend/locales/en.json` to a new file named with the BCP 47 locale code, for example `packages/frontend/locales/fr.json` for French.
+  </Step>
+
+  <Step title="Translate the strings">
+    Replace every English value with the translated equivalent. Keep all keys exactly as they appear in the source file. Do not translate the keys themselves.
+
+    ```json
+    {
+      "Home": "Accueil",
+      "Settings": "Paramètres",
+      "notification.follow": "{{actorName}} a commencé à vous suivre"
+    }
+    ```
+  </Step>
+
+  <Step title="Register the locale in i18n.ts">
+    Open `packages/frontend/lib/i18n.ts` and add an import and a resource entry:
+
+    ```typescript
+    import frFR from "@/locales/fr.json";
+
+    const i18nResources = {
+      "en-US": { translation: enUS },
+      "es-ES": { translation: esES },
+      "it-IT": { translation: itIT },
+      "fr-FR": { translation: frFR }, // add this
+    } as const;
+    ```
+  </Step>
+
+  <Step title="Add the option to the language picker">
+    Open `packages/frontend/app/(app)/settings/language.tsx` and add an entry to `LANGUAGE_OPTIONS`:
+
+    ```typescript
+    const LANGUAGE_OPTIONS = [
+      { code: "en-US", name: "English",  nativeName: "English", flag: "🇺🇸" },
+      { code: "es-ES", name: "Spanish",  nativeName: "Español", flag: "🇪🇸" },
+      { code: "it-IT", name: "Italian",  nativeName: "Italiano", flag: "🇮🇹" },
+      { code: "fr-FR", name: "French",   nativeName: "Français", flag: "🇫🇷" }, // add this
+    ];
+    ```
+  </Step>
+
+  <Step title="Test the new locale">
+    Run the app, open **Settings → Language**, select the new language, and verify that strings display correctly throughout the app. Check that any missing keys fall back gracefully to English.
+  </Step>
+</Steps>
+
+<Warning>
+Do not use machine translation for user-facing strings without a native-speaker review. Incorrect translations degrade the experience for all users of that language.
+</Warning>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Language reverts to English after restart">
+    Verify that `storeData(LANGUAGE_STORAGE_KEY, code)` completes without error. The storage key is `user_language_preference`. If the device storage layer fails, the app defaults to `en-US` on next launch.
+  </Accordion>
+
+  <Accordion title="A string is not translated">
+    The key may be missing from the locale file. Add it with the translated value. The English fallback (`fallbackLng: "en-US"`) will display in the meantime. You can also supply a `defaultValue` in the `t()` call as a temporary fallback.
+  </Accordion>
+
+  <Accordion title="Interpolation variables show as literal text">
+    Verify the variable name in the translation string matches the key passed to `t()`. For example, `{{actorName}}` requires `t("key", { actorName: "Alice" })`.
+  </Accordion>
+</AccordionGroup>

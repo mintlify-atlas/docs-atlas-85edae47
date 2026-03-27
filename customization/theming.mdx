@@ -1,0 +1,491 @@
+---
+title: "Theming"
+description: "How Mention's theme system works, including the useTheme() hook, color palette, utilities, and how to migrate components away from hardcoded colors."
+---
+
+Mention uses a centralized theming system built around a single `useTheme()` hook. Every color in the app flows through this system, giving users consistent light and dark modes with support for a custom accent color.
+
+## How the theme system works
+
+The architecture is intentionally layered:
+
+```
+User Settings (Oxy backend)
+  → appearanceStore (synced via API)
+    → useColorScheme (reads themeMode from store)
+      → useTheme() (computes final theme colors)
+        → Components (apply theme.colors.xxx)
+```
+
+The `useTheme()` hook is **context-independent** — it does not call `useOxy()` and does not require an `OxyContextProvider` ancestor. This means it works safely in components that render before or outside the Oxy provider tree.
+
+<Note>
+Theme settings are user-specific and synced to the backend. They persist across app restarts once the user is logged in and `loadMySettings()` has been called.
+</Note>
+
+## Color palette
+
+The theme exposes different values depending on whether the active mode is light or dark.
+
+<Tabs>
+  <Tab title="Light mode">
+    | Token | Value | Usage |
+    |---|---|---|
+    | `background` | `#FDFDFD` | Primary screen background |
+    | `text` | `#1e1e1e` | Primary body text |
+    | `border` | `#ededed` | Dividers, input borders |
+    | `primary` | User color or `#005c67` | Accent, interactive elements |
+    | `secondary` | `#d169e5` | Oxy brand color |
+  </Tab>
+  <Tab title="Dark mode">
+    | Token | Value | Usage |
+    |---|---|---|
+    | `background` | `#1A1A1A` | Primary screen background |
+    | `text` | `#ededed` | Primary body text |
+    | `border` | `#3c3c3c` | Dividers, input borders |
+    | `primary` | User color or `#005c67` | Accent, interactive elements |
+    | `secondary` | `#d169e5` | Oxy brand color |
+  </Tab>
+</Tabs>
+
+### Full color token reference
+
+**Backgrounds**
+
+```typescript
+theme.colors.background          // Main screen background
+theme.colors.backgroundSecondary // Secondary surfaces
+theme.colors.backgroundTertiary  // Tertiary surfaces
+theme.colors.card               // Card and modal backgrounds
+```
+
+**Text**
+
+```typescript
+theme.colors.text               // Primary text
+theme.colors.textSecondary      // Labels, descriptions
+theme.colors.textTertiary       // Placeholders, disabled states
+```
+
+**Borders**
+
+```typescript
+theme.colors.border             // Standard borders
+theme.colors.borderLight        // Light dividers
+```
+
+**Brand colors**
+
+```typescript
+theme.colors.primary            // Accent color (user-customizable)
+theme.colors.primaryLight       // Lighter variant
+theme.colors.primaryDark        // Darker variant
+theme.colors.secondary          // Oxy brand purple (#d169e5)
+```
+
+**Interactive**
+
+```typescript
+theme.colors.tint               // Same as primary
+theme.colors.icon               // Default icon color
+theme.colors.iconActive         // Active/selected icon color
+```
+
+**Status**
+
+```typescript
+theme.colors.success            // #10B981
+theme.colors.error              // #EF4444
+theme.colors.warning            // #F59E0B
+theme.colors.info               // #3B82F6
+```
+
+**Special**
+
+```typescript
+theme.colors.shadow             // Drop shadow color
+theme.colors.overlay            // Modal overlay background
+```
+
+## The useTheme() hook
+
+Import the hook from `@oxyhq/bloom/theme`:
+
+```typescript
+import { useTheme } from "@oxyhq/bloom/theme";
+```
+
+Call it at the top of your component to get the full theme object:
+
+```typescript
+function MyComponent() {
+  const theme = useTheme();
+
+  const isDark = theme.isDark;   // boolean
+  const isLight = theme.isLight; // boolean
+  const mode = theme.mode;       // "light" | "dark"
+  const colors = theme.colors;   // ThemeColors object
+}
+```
+
+### Common usage patterns
+
+**Basic styled component**
+
+```typescript
+import { useTheme } from "@oxyhq/bloom/theme";
+
+function MyComponent() {
+  const theme = useTheme();
+
+  return (
+    <View style={{ backgroundColor: theme.colors.background }}>
+      <Text style={{ color: theme.colors.text }}>Hello World</Text>
+    </View>
+  );
+}
+```
+
+**Combining with StyleSheet**
+
+```typescript
+const styles = StyleSheet.create({
+  container: {
+    padding: 16,
+    borderRadius: 8,
+  },
+});
+
+// In component
+<View style={[styles.container, { backgroundColor: theme.colors.card }]}>
+  <Text style={{ color: theme.colors.text }}>Content</Text>
+</View>
+```
+
+**Primary button**
+
+```typescript
+<TouchableOpacity style={{
+  backgroundColor: theme.colors.primary,
+  padding: 12,
+  borderRadius: 8,
+}}>
+  <Text style={{ color: theme.colors.card }}>Primary Button</Text>
+</TouchableOpacity>
+```
+
+**Switch component**
+
+```typescript
+<Switch
+  value={enabled}
+  onValueChange={setEnabled}
+  trackColor={{
+    false: theme.colors.backgroundTertiary,
+    true: theme.colors.primary,
+  }}
+  thumbColor={theme.colors.card}
+  ios_backgroundColor={theme.colors.backgroundTertiary}
+/>
+```
+
+**TextInput**
+
+```typescript
+<TextInput
+  style={{
+    backgroundColor: theme.colors.card,
+    color: theme.colors.text,
+    borderColor: theme.colors.border,
+    borderWidth: 1,
+  }}
+  placeholderTextColor={theme.colors.textTertiary}
+  placeholder="Enter text..."
+/>
+```
+
+**StatusBar**
+
+```typescript
+import { StatusBar } from "expo-status-bar";
+
+function App() {
+  const theme = useTheme();
+
+  return (
+    <>
+      <StatusBar style={theme.isDark ? "light" : "dark"} />
+      {/* rest of app */}
+    </>
+  );
+}
+```
+
+### Getting a single color
+
+If you only need one color value, `useThemeColor` avoids pulling in the full theme object:
+
+```typescript
+import { useThemeColor } from "@oxyhq/bloom/theme";
+
+function MyComponent() {
+  const textColor = useThemeColor("text");
+  const bgColor = useThemeColor("background");
+
+  return (
+    <View style={{ backgroundColor: bgColor }}>
+      <Text style={{ color: textColor }}>Hello</Text>
+    </View>
+  );
+}
+```
+
+### TypeScript types
+
+The hook exports `Theme` and `ThemeColors` for typed usage:
+
+```typescript
+import { useTheme, Theme, ThemeColors } from "@oxyhq/bloom/theme";
+
+const theme: Theme = useTheme();
+const colors: ThemeColors = theme.colors;
+```
+
+## Theme utilities
+
+Import helpers from `@/utils/theme` and `@/styles/shared` for common style patterns.
+
+### getThemedShadow()
+
+Returns a cross-platform shadow style at three elevations:
+
+```typescript
+import { getThemedShadow } from "@/styles/shared";
+
+<View style={[styles.card, getThemedShadow(theme, "medium")]}>
+  {/* Content */}
+</View>
+```
+
+Accepted values: `"small"`, `"medium"`, `"large"`.
+
+### getThemedBorder()
+
+Returns a consistent border style using the theme border color:
+
+```typescript
+import { getThemedBorder } from "@/styles/shared";
+
+<View style={[styles.container, getThemedBorder(theme, 1)]}>
+  {/* Content */}
+</View>
+```
+
+### getThemedCard()
+
+Returns a complete card style (background color, border radius, border):
+
+```typescript
+import { getThemedCard } from "@/utils/theme";
+
+<View style={getThemedCard(theme)}>
+  {/* Card content */}
+</View>
+```
+
+### withOpacity()
+
+Adds opacity to any hex color string:
+
+```typescript
+import { withOpacity } from "@/utils/theme";
+
+<View style={{ backgroundColor: withOpacity(theme.colors.primary, 0.1) }}>
+  {/* Semi-transparent accent background */}
+</View>
+```
+
+### adjustBrightness()
+
+Creates a lighter or darker shade of a color:
+
+```typescript
+import { adjustBrightness } from "@/utils/theme";
+
+<View style={{ backgroundColor: adjustBrightness(theme.colors.primary, 20) }}>
+  {/* Slightly lighter primary color */}
+</View>
+```
+
+### ThemedView and ThemedText
+
+These wrapper components apply theme colors automatically via NativeWind — no manual styling required:
+
+```typescript
+import { ThemedView } from "@/components/ThemedView";
+import { ThemedText } from "@/components/ThemedText";
+
+<ThemedView style={styles.container}>
+  <ThemedText type="title">Title</ThemedText>
+  <ThemedText type="default">Body text</ThemedText>
+  <ThemedText type="link">Link text (uses primary color)</ThemedText>
+</ThemedView>
+```
+
+`ThemedView` applies the `bg-background` NativeWind class automatically. `ThemedText` accepts a `type` prop:
+
+| Type | NativeWind class |
+|------|-----------------|
+| `default` | `text-base leading-6 font-[Inter-Regular]` |
+| `defaultSemiBold` | `text-base leading-6 font-semibold` |
+| `title` | `text-[32px] leading-8 font-bold` |
+| `subtitle` | `text-xl font-bold` |
+| `link` | `text-base text-primary` |
+
+## User theme customization
+
+Users control two theme preferences from **Settings → Appearance**:
+
+1. **Color mode** — `system`, `light`, or `dark`. The `system` option follows the device OS preference.
+2. **Accent color** — A custom primary color chosen from a preset palette. Premium users and the `oxy` account have access to additional color presets.
+
+Preferences are saved to the user's account and synced to the backend via `updateMySettings()`. The full settings flow is:
+
+```typescript
+await updateMySettings({
+  appearance: {
+    themeMode: "dark",       // "system" | "light" | "dark"
+    primaryColor: "#FF6B6B", // hex color string
+  },
+});
+```
+
+<Tip>
+To ensure the custom primary color and theme mode load before the first render, call `loadMySettings()` early in the component lifecycle — for example, in the root layout's `useEffect`.
+</Tip>
+
+## Migration guide
+
+To update a component that uses hardcoded colors, follow these steps:
+
+<Steps>
+  <Step title="Import the hook">
+    ```typescript
+    import { useTheme } from "@oxyhq/bloom/theme";
+    ```
+  </Step>
+
+  <Step title="Call the hook in your component">
+    ```typescript
+    const theme = useTheme();
+    ```
+  </Step>
+
+  <Step title="Replace hardcoded colors">
+    Use this mapping as a guide:
+
+    | Hardcoded value | Replace with |
+    |---|---|
+    | `#000`, `#1A1A1A` | `theme.colors.background` (dark) |
+    | `#fff`, `#FDFDFD` | `theme.colors.background` (light) |
+    | `#666` | `theme.colors.textSecondary` |
+    | `#999`, `#ccc` | `theme.colors.textTertiary` |
+    | `#1D9BF0`, brand colors | `theme.colors.primary` |
+    | `#ff4757`, error colors | `theme.colors.error` |
+  </Step>
+
+  <Step title="Apply inline styles where needed">
+    ```typescript
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <Text style={[styles.text, { color: theme.colors.text }]}>Content</Text>
+    </View>
+    ```
+  </Step>
+
+  <Step title="Test in both modes">
+    Verify the component looks correct in both light and dark modes, and on both web and mobile. Check that the theme persists across app restarts.
+  </Step>
+</Steps>
+
+### Migration checklist
+
+<AccordionGroup>
+  <Accordion title="Full checklist for updating a component">
+    - Import `useTheme` from `@oxyhq/bloom/theme`
+    - Call `const theme = useTheme()` in the component body
+    - Replace `#000` / `#fff` with `theme.colors.background`
+    - Replace `#666` with `theme.colors.textSecondary`
+    - Replace `#ccc` / `#999` with `theme.colors.textTertiary`
+    - Replace brand colors with `theme.colors.primary`
+    - Replace error colors with `theme.colors.error`
+    - Update `Switch` `trackColor` and `thumbColor`
+    - Update `TextInput` `placeholderTextColor`
+    - Update icon `color` props
+    - Test in light mode
+    - Test in dark mode
+    - Verify on web and mobile
+    - Confirm settings persist across restarts
+    - Remove any `import { Colors } from "@/constants/Colors"` references
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Error: useOxy must be used within an OxyContextProvider">
+    Do not call `useOxy()` directly in components that render outside the provider tree. Use `useTheme()` instead — it reads from the appearance store and has no context dependency.
+
+    ```typescript
+    // Avoid this
+    const { user } = useOxy();
+
+    // Do this
+    const theme = useTheme();
+    ```
+  </Accordion>
+
+  <Accordion title="Theme not updating when user changes settings">
+    Make sure the appearance store is loaded:
+
+    ```typescript
+    import { useAppearanceStore } from "@/store/appearanceStore";
+
+    const { loadMySettings } = useAppearanceStore();
+
+    useEffect(() => {
+      loadMySettings();
+    }, []);
+    ```
+  </Accordion>
+
+  <Accordion title="Colors not changing between light and dark mode">
+    Verify you are using `theme.colors.xxx` tokens, not hardcoded hex values. Debug the active mode with:
+
+    ```typescript
+    console.log("Theme mode:", theme.mode);
+    console.log("Background:", theme.colors.background);
+    ```
+  </Accordion>
+
+  <Accordion title="Custom primary color not applying">
+    Check that the color is saved and the store is loaded:
+
+    ```typescript
+    const { mySettings } = useAppearanceStore();
+    console.log("Saved color:", mySettings?.appearance?.primaryColor);
+    console.log("Theme primary:", theme.colors.primary);
+    ```
+  </Accordion>
+
+  <Accordion title="Components re-rendering too frequently">
+    Destructure only what you need from the hook, or use `useThemeColor` for single values. Memoize complex style objects:
+
+    ```typescript
+    // Only subscribe to what you use
+    const { colors, isDark } = useTheme();
+
+    // Memoize derived styles
+    const cardStyle = useMemo(() => getThemedCard(theme), [theme]);
+    ```
+  </Accordion>
+</AccordionGroup>
